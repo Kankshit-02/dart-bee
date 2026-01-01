@@ -1,59 +1,76 @@
 /**
- * Storage Module
- * Handles LocalStorage management for games and players
+ * Storage Module - Supabase Backend
+ * Replaces LocalStorage with Supabase for live sync and sharing
  */
 
 const Storage = (() => {
-    const GAMES_KEY = 'dartbee_games';
-    const PLAYERS_KEY = 'dartbee_players';
-    const VERSION_KEY = 'dartbee_version';
-    const CURRENT_VERSION = '1.0.0';
+    let supabase = null;
+    let initialized = false;
 
     /**
-     * Initialize storage, create if doesn't exist
+     * Ensure Supabase is initialized
      */
-    function init() {
-        if (!localStorage.getItem(VERSION_KEY)) {
-            localStorage.setItem(VERSION_KEY, CURRENT_VERSION);
-            localStorage.setItem(GAMES_KEY, JSON.stringify([]));
-            localStorage.setItem(PLAYERS_KEY, JSON.stringify({}));
-        }
-        validateData();
-    }
-
-    /**
-     * Validate stored data integrity
-     */
-    function validateData() {
-        try {
-            const games = getGames();
-            const players = getPlayers();
-            if (!Array.isArray(games) || typeof players !== 'object') {
-                resetStorage();
+    function ensureInitialized() {
+        if (!supabase) {
+            if (!SupabaseClient.isConnected()) {
+                throw new Error('Supabase client not connected');
             }
+            supabase = SupabaseClient.getClient();
+        }
+        return supabase;
+    }
+
+    /**
+     * Initialize storage connection
+     */
+    async function init() {
+        try {
+            if (initialized) {
+                return true;
+            }
+
+            ensureInitialized();
+
+            // Test connection
+            const { error } = await supabase
+                .from('games')
+                .select('id')
+                .limit(1);
+
+            if (error) {
+                console.error('Database test failed:', error);
+                UI.showToast('Failed to connect to database', 'error');
+                return false;
+            }
+
+            initialized = true;
+            console.log('✓ Storage initialized successfully');
+            return true;
         } catch (error) {
-            console.error('Storage validation error:', error);
-            resetStorage();
+            console.error('Storage initialization error:', error);
+            return false;
         }
     }
 
     /**
-     * Reset storage to defaults
+     * Get all games (ordered by creation date, newest first)
      */
-    function resetStorage() {
-        localStorage.setItem(GAMES_KEY, JSON.stringify([]));
-        localStorage.setItem(PLAYERS_KEY, JSON.stringify({}));
-    }
-
-    /**
-     * Get all games
-     */
-    function getGames() {
+    async function getGames() {
         try {
-            const games = localStorage.getItem(GAMES_KEY);
-            return games ? JSON.parse(games) : [];
+            const sb = ensureInitialized();
+            const { data, error } = await sb
+                .from('games')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error('Error fetching games:', error);
+                throw error;
+            }
+
+            return data || [];
         } catch (error) {
-            console.error('Error retrieving games:', error);
+            console.error('getGames error:', error);
             return [];
         }
     }
@@ -61,57 +78,96 @@ const Storage = (() => {
     /**
      * Save a new game
      */
-    function saveGame(game) {
+    async function saveGame(game) {
         try {
-            const games = getGames();
-            games.push(game);
-            localStorage.setItem(GAMES_KEY, JSON.stringify(games));
-            updatePlayersFromGame(game);
-            return game;
+            const sb = ensureInitialized();
+            const { data, error } = await sb
+                .from('games')
+                .insert([game])
+                .select();
+
+            if (error) {
+                console.error('Error saving game:', error);
+                throw error;
+            }
+
+            // Update player profiles
+            await updatePlayersFromGame(game);
+
+            return data ? data[0] : game;
         } catch (error) {
-            console.error('Error saving game:', error);
-            return null;
+            console.error('saveGame error:', error);
+            throw error;
         }
     }
 
     /**
      * Update an existing game
      */
-    function updateGame(gameId, updates) {
+    async function updateGame(gameId, updates) {
         try {
-            const games = getGames();
-            const index = games.findIndex(g => g.id === gameId);
-            if (index !== -1) {
-                games[index] = { ...games[index], ...updates };
-                localStorage.setItem(GAMES_KEY, JSON.stringify(games));
-                return games[index];
+            const sb = ensureInitialized();
+            const { data, error } = await sb
+                .from('games')
+                .update(updates)
+                .eq('id', gameId)
+                .select();
+
+            if (error) {
+                console.error('Error updating game:', error);
+                throw error;
             }
-            return null;
+
+            return data ? data[0] : null;
         } catch (error) {
-            console.error('Error updating game:', error);
-            return null;
+            console.error('updateGame error:', error);
+            throw error;
         }
     }
 
     /**
      * Get a single game by ID
      */
-    function getGame(gameId) {
-        const games = getGames();
-        return games.find(g => g.id === gameId) || null;
+    async function getGame(gameId) {
+        try {
+            const sb = ensureInitialized();
+            const { data, error } = await sb
+                .from('games')
+                .select('*')
+                .eq('id', gameId)
+                .single();
+
+            if (error) {
+                console.error('Error fetching game:', error);
+                throw error;
+            }
+
+            return data;
+        } catch (error) {
+            console.error('getGame error:', error);
+            return null;
+        }
     }
 
     /**
      * Delete a game
      */
-    function deleteGame(gameId) {
+    async function deleteGame(gameId) {
         try {
-            const games = getGames();
-            const filtered = games.filter(g => g.id !== gameId);
-            localStorage.setItem(GAMES_KEY, JSON.stringify(filtered));
+            const { error } = await supabase
+                .from('games')
+                .delete()
+                .eq('id', gameId);
+
+            if (error) {
+                console.error('Error deleting game:', error);
+                throw error;
+            }
+
             return true;
         } catch (error) {
-            console.error('Error deleting game:', error);
+            console.error('deleteGame error:', error);
+            UI.showToast('Failed to delete game', 'error');
             return false;
         }
     }
@@ -119,27 +175,57 @@ const Storage = (() => {
     /**
      * Get all players
      */
-    function getPlayers() {
+    async function getPlayers() {
         try {
-            const players = localStorage.getItem(PLAYERS_KEY);
-            return players ? JSON.parse(players) : {};
+            const sb = ensureInitialized();
+            const { data, error } = await sb
+                .from('players')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error('Error fetching players:', error);
+                throw error;
+            }
+
+            // Convert array to object with name as key (for compatibility with existing code)
+            const playersObj = {};
+            (data || []).forEach(player => {
+                playersObj[player.name] = player;
+            });
+
+            return playersObj;
         } catch (error) {
-            console.error('Error retrieving players:', error);
+            console.error('getPlayers error:', error);
             return {};
         }
     }
 
     /**
-     * Get or create player profile
+     * Get or create a player profile
      */
-    function getOrCreatePlayer(playerName) {
-        const players = getPlayers();
-        if (!players[playerName]) {
-            players[playerName] = {
+    async function getOrCreatePlayer(playerName) {
+        try {
+            const sb = ensureInitialized();
+
+            // Try to fetch existing player
+            const { data: existing, error: fetchError } = await sb
+                .from('players')
+                .select('*')
+                .eq('name', playerName)
+                .single();
+
+            if (!fetchError && existing) {
+                return existing;
+            }
+
+            // Create new player if doesn't exist
+            const newPlayer = {
                 id: generateUUID(),
                 name: playerName,
-                createdAt: Date.now(),
-                aggregateStats: {
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                aggregate_stats: {
                     gamesPlayed: 0,
                     gamesWon: 0,
                     totalDarts: 0,
@@ -152,132 +238,177 @@ const Storage = (() => {
                     totalScore: 0
                 }
             };
-            localStorage.setItem(PLAYERS_KEY, JSON.stringify(players));
+
+            const { data: created, error: insertError } = await sb
+                .from('players')
+                .insert([newPlayer])
+                .select();
+
+            if (insertError) {
+                console.error('Error creating player:', insertError);
+                throw insertError;
+            }
+
+            return created ? created[0] : newPlayer;
+        } catch (error) {
+            console.error('getOrCreatePlayer error:', error);
+            // Return a temporary player object if creation fails
+            return {
+                name: playerName,
+                aggregate_stats: {
+                    gamesPlayed: 0,
+                    gamesWon: 0,
+                    totalDarts: 0,
+                    total180s: 0,
+                    total140plus: 0,
+                    totalCheckoutAttempts: 0,
+                    totalCheckoutSuccess: 0,
+                    bestCheckout: 0,
+                    maxDart: 0,
+                    totalScore: 0
+                }
+            };
         }
-        return players[playerName];
-    }
-
-    /**
-     * Update player aggregate stats from a completed game
-     */
-    function updatePlayersFromGame(game) {
-        const players = getPlayers();
-
-        game.players.forEach(player => {
-            const playerName = player.name;
-            let playerProfile = players[playerName] || {
-                id: generateUUID(),
-                name: playerName,
-                createdAt: Date.now(),
-                aggregateStats: {
-                    gamesPlayed: 0,
-                    gamesWon: 0,
-                    totalDarts: 0,
-                    total180s: 0,
-                    total140plus: 0,
-                    totalCheckoutAttempts: 0,
-                    totalCheckoutSuccess: 0,
-                    bestCheckout: 0,
-                    maxDart: 0,
-                    totalScore: 0
-                }
-            };
-
-            // Update game stats
-            playerProfile.aggregateStats.gamesPlayed++;
-            if (player.winner) {
-                playerProfile.aggregateStats.gamesWon++;
-            }
-
-            // Update dart stats
-            playerProfile.aggregateStats.totalScore += player.stats.totalScore;
-            playerProfile.aggregateStats.totalDarts += player.stats.totalDarts;
-            playerProfile.aggregateStats.totalCheckoutAttempts += player.stats.checkoutAttempts;
-            playerProfile.aggregateStats.totalCheckoutSuccess += player.stats.checkoutSuccess;
-
-            // Count 180s and 140+
-            player.turns.forEach(turn => {
-                const turnTotal = turn.darts.reduce((a, b) => a + b, 0);
-                if (turnTotal === 180) {
-                    playerProfile.aggregateStats.total180s++;
-                }
-                if (turnTotal >= 140 && turnTotal < 180) {
-                    playerProfile.aggregateStats.total140plus++;
-                }
-                turn.darts.forEach(dart => {
-                    if (dart > playerProfile.aggregateStats.maxDart) {
-                        playerProfile.aggregateStats.maxDart = dart;
-                    }
-                });
-            });
-
-            // Update best checkout
-            if (player.stats.checkoutSuccess > 0) {
-                playerProfile.aggregateStats.bestCheckout = Math.max(
-                    playerProfile.aggregateStats.bestCheckout,
-                    player.stats.checkoutSuccess
-                );
-            }
-
-            players[playerName] = playerProfile;
-        });
-
-        localStorage.setItem(PLAYERS_KEY, JSON.stringify(players));
     }
 
     /**
      * Get all games for a specific player
      */
-    function getPlayerGames(playerName) {
-        const games = getGames();
-        return games.filter(game =>
-            game.players.some(p => p.name === playerName)
-        );
+    async function getPlayerGames(playerName) {
+        try {
+            const sb = ensureInitialized();
+            const { data, error } = await sb
+                .from('games')
+                .select('*')
+                .filter('players', 'cs', `[{"name":"${playerName}"}]`)
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                // Fallback: fetch all games and filter client-side
+                const allGames = await getGames();
+                return allGames.filter(game =>
+                    game.players.some(p => p.name === playerName)
+                );
+            }
+
+            return data || [];
+        } catch (error) {
+            console.error('getPlayerGames error:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Update player aggregate stats from a completed game
+     */
+    async function updatePlayersFromGame(game) {
+        try {
+            const sb = ensureInitialized();
+            const updates = {};
+
+            // Calculate stats for each player
+            game.players.forEach(player => {
+                const playerName = player.name;
+
+                updates[playerName] = {
+                    gamesPlayed: 1,
+                    gamesWon: player.winner ? 1 : 0,
+                    totalDarts: player.stats.totalDarts,
+                    total180s: 0,
+                    total140plus: 0,
+                    totalCheckoutAttempts: player.stats.checkoutAttempts,
+                    totalCheckoutSuccess: player.stats.checkoutSuccess,
+                    bestCheckout: player.stats.checkoutSuccess > 0 ? player.stats.checkoutSuccess : 0,
+                    maxDart: player.stats.maxDart,
+                    totalScore: player.stats.totalScore
+                };
+
+                // Count 180s and 140+
+                player.turns.forEach(turn => {
+                    const turnTotal = turn.darts.reduce((a, b) => a + b, 0);
+                    if (turnTotal === 180) {
+                        updates[playerName].total180s++;
+                    } else if (turnTotal >= 140) {
+                        updates[playerName].total140plus++;
+                    }
+                });
+            });
+
+            // Update or create player profiles
+            for (const [playerName, stats] of Object.entries(updates)) {
+                try {
+                    // Try to fetch existing player
+                    const { data: existing } = await sb
+                        .from('players')
+                        .select('aggregate_stats')
+                        .eq('name', playerName)
+                        .single();
+
+                    if (existing) {
+                        // Aggregate the stats
+                        const current = existing.aggregate_stats;
+                        const aggregated = {
+                            gamesPlayed: (current.gamesPlayed || 0) + stats.gamesPlayed,
+                            gamesWon: (current.gamesWon || 0) + stats.gamesWon,
+                            totalDarts: (current.totalDarts || 0) + stats.totalDarts,
+                            total180s: (current.total180s || 0) + stats.total180s,
+                            total140plus: (current.total140plus || 0) + stats.total140plus,
+                            totalCheckoutAttempts: (current.totalCheckoutAttempts || 0) + stats.totalCheckoutAttempts,
+                            totalCheckoutSuccess: (current.totalCheckoutSuccess || 0) + stats.totalCheckoutSuccess,
+                            bestCheckout: Math.max(current.bestCheckout || 0, stats.bestCheckout),
+                            maxDart: Math.max(current.maxDart || 0, stats.maxDart),
+                            totalScore: (current.totalScore || 0) + stats.totalScore
+                        };
+
+                        await sb
+                            .from('players')
+                            .update({ aggregate_stats: aggregated, updated_at: new Date().toISOString() })
+                            .eq('name', playerName);
+                    } else {
+                        // Create new player
+                        await sb
+                            .from('players')
+                            .insert([{
+                                id: generateUUID(),
+                                name: playerName,
+                                aggregate_stats: stats,
+                                created_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString()
+                            }]);
+                    }
+                } catch (error) {
+                    console.error(`Error updating player ${playerName}:`, error);
+                    // Continue with next player
+                }
+            }
+        } catch (error) {
+            console.error('updatePlayersFromGame error:', error);
+            // Don't throw - game was already saved, just stats update failed
+        }
     }
 
     /**
      * Export all data as JSON
      */
-    function exportData() {
-        return {
-            version: localStorage.getItem(VERSION_KEY),
-            exportDate: new Date().toISOString(),
-            games: getGames(),
-            players: getPlayers()
-        };
-    }
-
-    /**
-     * Import data from JSON
-     */
-    function importData(data) {
+    async function exportData() {
         try {
-            if (!data.games || !data.players) {
-                throw new Error('Invalid data format');
-            }
-            localStorage.setItem(GAMES_KEY, JSON.stringify(data.games));
-            localStorage.setItem(PLAYERS_KEY, JSON.stringify(data.players));
-            validateData();
-            return true;
+            const games = await getGames();
+            const players = await getPlayers();
+
+            return {
+                version: '1.0.0',
+                exportDate: new Date().toISOString(),
+                games: games,
+                players: players
+            };
         } catch (error) {
-            console.error('Error importing data:', error);
-            return false;
+            console.error('Export error:', error);
+            throw error;
         }
     }
 
     /**
-     * Clear all data
-     */
-    function clearAll() {
-        if (confirm('Are you sure you want to delete all data? This cannot be undone.')) {
-            resetStorage();
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Generate UUID
+     * Generate UUID v4
      */
     function generateUUID() {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -285,22 +416,6 @@ const Storage = (() => {
             const v = c === 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
         });
-    }
-
-    /**
-     * Get storage size info
-     */
-    function getStorageInfo() {
-        const games = localStorage.getItem(GAMES_KEY);
-        const players = localStorage.getItem(PLAYERS_KEY);
-        const gamesSize = games ? games.length : 0;
-        const playersSize = players ? players.length : 0;
-        return {
-            totalGames: getGames().length,
-            totalPlayers: Object.keys(getPlayers()).length,
-            approximateSize: (gamesSize + playersSize) / 1024, // KB
-            storageQuota: 5120 // 5MB typical for localStorage
-        };
     }
 
     // Public API
@@ -316,13 +431,16 @@ const Storage = (() => {
         getPlayerGames,
         updatePlayersFromGame,
         exportData,
-        importData,
-        clearAll,
-        getStorageInfo,
-        validateData,
         generateUUID
     };
 })();
 
-// Initialize storage on load
-Storage.init();
+// Initialize storage when Supabase client is ready
+document.addEventListener('DOMContentLoaded', async () => {
+    // Wait for Supabase to initialize
+    setTimeout(async () => {
+        if (SupabaseClient.isConnected()) {
+            await Storage.init();
+        }
+    }, 500);
+});

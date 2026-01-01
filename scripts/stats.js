@@ -7,9 +7,9 @@ const Stats = (() => {
     /**
      * Calculate player statistics from all their games
      */
-    function calculatePlayerStats(playerName) {
-        const playerProfile = Storage.getOrCreatePlayer(playerName);
-        const games = Storage.getPlayerGames(playerName);
+    async function calculatePlayerStats(playerName) {
+        const playerProfile = await Storage.getOrCreatePlayer(playerName);
+        const games = await Storage.getPlayerGames(playerName);
 
         const stats = {
             gamesPlayed: 0,
@@ -93,7 +93,7 @@ const Stats = (() => {
             const player = game.players.find(p => p.name === playerName);
             return {
                 id: game.id,
-                date: new Date(game.createdAt).toLocaleDateString(),
+                date: new Date(game.created_at).toLocaleDateString(),
                 opponent: game.players.filter(p => p.name !== playerName).map(p => p.name).join(', '),
                 won: player.winner,
                 darts: player.stats.totalDarts,
@@ -107,34 +107,38 @@ const Stats = (() => {
     /**
      * Get leaderboard rankings
      */
-    function getLeaderboard(metric = 'wins', timeFilter = 'all-time') {
-        const players = Storage.getPlayers();
-        const games = Storage.getGames();
+    async function getLeaderboard(metric = 'wins', timeFilter = 'all-time') {
+        const players = await Storage.getPlayers();
+        const games = await Storage.getGames();
 
         // Filter games by time
         const cutoffDate = getTimeFilterDate(timeFilter);
-        const filteredGames = games.filter(g => g.createdAt >= cutoffDate && g.completedAt);
+        const filteredGames = games.filter(g => {
+            const gameDate = new Date(g.created_at).getTime();
+            return gameDate >= cutoffDate && g.completed_at;
+        });
 
-        const rankings = Object.entries(players).map(([name, profile]) => {
+        const rankings = [];
+        for (const [name, profile] of Object.entries(players)) {
             // Count games in filtered period
             const playerGames = filteredGames.filter(g =>
                 g.players.some(p => p.name === name)
             );
 
             if (playerGames.length === 0) {
-                return null;
+                continue;
             }
 
-            const stats = calculatePlayerStats(name);
+            const stats = await calculatePlayerStats(name);
             const statsInPeriod = calculateStatsForGames(playerGames, name);
 
-            return {
+            rankings.push({
                 name: name,
                 metric: getMetricValue(metric, statsInPeriod),
                 stats: statsInPeriod,
                 fullStats: stats
-            };
-        }).filter(r => r !== null);
+            });
+        }
 
         // Sort by metric
         rankings.sort((a, b) => {
@@ -230,9 +234,10 @@ const Stats = (() => {
     /**
      * Get quick stats overview for home page
      */
-    function getQuickStats() {
-        const games = Storage.getGames().filter(g => g.completedAt);
-        const players = Storage.getPlayers();
+    async function getQuickStats() {
+        const allGames = await Storage.getGames();
+        const games = allGames.filter(g => g.completed_at);
+        const players = await Storage.getPlayers();
 
         if (games.length === 0) {
             return {
@@ -243,10 +248,11 @@ const Stats = (() => {
             };
         }
 
-        const playerStats = Object.keys(players).map(playerName => {
-            const stats = calculatePlayerStats(playerName);
-            return { name: playerName, ...stats };
-        });
+        const playerStats = [];
+        for (const playerName of Object.keys(players)) {
+            const stats = await calculatePlayerStats(playerName);
+            playerStats.push({ name: playerName, ...stats });
+        }
 
         playerStats.sort((a, b) => parseFloat(b.avgPerDart) - parseFloat(a.avgPerDart));
 
@@ -279,22 +285,23 @@ const Stats = (() => {
     /**
      * Get comparison between two players
      */
-    function comparePlayerStats(playerName1, playerName2) {
-        const stats1 = calculatePlayerStats(playerName1);
-        const stats2 = calculatePlayerStats(playerName2);
+    async function comparePlayerStats(playerName1, playerName2) {
+        const stats1 = await calculatePlayerStats(playerName1);
+        const stats2 = await calculatePlayerStats(playerName2);
 
         return {
             player1: { name: playerName1, ...stats1 },
             player2: { name: playerName2, ...stats2 },
-            headToHeadRecord: getHeadToHeadRecord(playerName1, playerName2)
+            headToHeadRecord: await getHeadToHeadRecord(playerName1, playerName2)
         };
     }
 
     /**
      * Get head to head record between two players
      */
-    function getHeadToHeadRecord(playerName1, playerName2) {
-        const games = Storage.getGames().filter(g => g.completedAt);
+    async function getHeadToHeadRecord(playerName1, playerName2) {
+        const allGames = await Storage.getGames();
+        const games = allGames.filter(g => g.completed_at);
         let wins1 = 0, wins2 = 0;
 
         games.forEach(game => {

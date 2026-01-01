@@ -12,12 +12,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <!-- Stylesheets -->
-    <link rel="stylesheet" href="/styles/main.css">
-    <link rel="stylesheet" href="/styles/components.css">
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="stylesheet" href="styles/components.css">
 
     <!-- Manifest for PWA -->
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐝</text></svg>">
+
+    <!-- Supabase & Configuration -->
+    <!-- Load Supabase Client Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Load Configuration (contains API credentials) -->
+    <script src="scripts/config.js"></script>
 </head>
 <body>
     <div id="app" class="app-container">
@@ -56,43 +62,58 @@
                     <p>Track your dart games and dominate the leaderboard</p>
                 </div>
 
-                <div class="home-grid">
-                    <!-- Quick Start Section -->
-                    <section class="home-section">
-                        <button class="btn btn-primary btn-large" id="quick-new-game">
-                            <span class="icon">➕</span>
-                            Start New Game
-                        </button>
-                    </section>
+                <div class="home-grid-2col">
+                    <!-- Left Column: Stats & Actions -->
+                    <div class="home-left-column">
+                        <!-- Stats Widget Section with Quick Action -->
+                        <section class="home-section">
+                            <div class="stats-widget-header">
+                                <h3 style="margin: 0; color: var(--color-primary);">Quick Stats</h3>
+                                <button class="btn btn-primary btn-small" id="quick-new-game" style="white-space: nowrap;">
+                                    <span class="icon">➕</span>
+                                    New Game
+                                </button>
+                            </div>
+                            <div class="stats-widget">
+                                <div class="stats-grid">
+                                    <div class="stat-card">
+                                        <div class="stat-icon">🎮</div>
+                                        <div class="stat-content">
+                                            <div class="stat-value" id="stat-games">0</div>
+                                            <div class="stat-label">Games Played</div>
+                                        </div>
+                                    </div>
+                                    <div class="stat-card">
+                                        <div class="stat-icon">👥</div>
+                                        <div class="stat-content">
+                                            <div class="stat-value" id="stat-players">0</div>
+                                            <div class="stat-label">Players</div>
+                                        </div>
+                                    </div>
+                                    <div class="stat-card">
+                                        <div class="stat-icon">⭐</div>
+                                        <div class="stat-content">
+                                            <div class="stat-value" id="stat-top-player">—</div>
+                                            <div class="stat-label">Top Player</div>
+                                        </div>
+                                    </div>
+                                    <div class="stat-card">
+                                        <div class="stat-icon">📊</div>
+                                        <div class="stat-content">
+                                            <div class="stat-value" id="stat-avg">0</div>
+                                            <div class="stat-label">Best Avg/Dart</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
 
-                    <!-- Recent Games Section -->
-                    <section class="home-section">
+                    <!-- Right Column: Recent Games -->
+                    <section class="home-section recent-games-column">
                         <h2>Recent Games</h2>
                         <div id="recent-games-list" class="games-list">
                             <p class="placeholder">No games yet. Start your first game!</p>
-                        </div>
-                    </section>
-
-                    <!-- Quick Stats Section -->
-                    <section class="home-section">
-                        <h2>Your Stats</h2>
-                        <div id="quick-stats" class="stats-grid">
-                            <div class="stat-card">
-                                <div class="stat-label">Games Played</div>
-                                <div class="stat-value" id="stat-games">0</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-label">Win Rate</div>
-                                <div class="stat-value" id="stat-win-rate">—</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-label">Avg Per Dart</div>
-                                <div class="stat-value" id="stat-avg-dart">—</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-label">Best 180s</div>
-                                <div class="stat-value" id="stat-180s">0</div>
-                            </div>
                         </div>
                     </section>
                 </div>
@@ -170,7 +191,10 @@
             <div id="active-game-page" class="page">
                 <div class="page-header">
                     <h1 id="game-title">Game</h1>
-                    <button class="btn btn-secondary btn-small" id="end-game-btn">End Game</button>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <button class="btn btn-success btn-small" id="share-game-btn">📤 Share Game</button>
+                        <button class="btn btn-secondary btn-small" id="end-game-btn">End Game</button>
+                    </div>
                 </div>
 
                 <!-- Score Board -->
@@ -178,21 +202,32 @@
                     <!-- Dynamically generated player scores -->
                 </div>
 
-                <!-- Dart Entry -->
-                <div class="dart-entry-section">
-                    <h2 id="current-player-name">Player 1</h2>
+                <!-- Game Content Wrapper (2-column layout: Dart Entry + Live Rankings) -->
+                <div class="game-content-wrapper">
+                    <!-- Dart Entry Section -->
+                    <div class="dart-entry-section">
+                        <h2 id="current-player-name">Player 1</h2>
 
-                    <div id="dart-inputs-container" class="dart-inputs">
-                        <!-- Dynamically generated dart inputs -->
+                        <div id="dart-inputs-container" class="dart-inputs">
+                            <!-- Dynamically generated dart inputs -->
+                        </div>
+
+                        <div class="dart-actions">
+                            <button type="button" class="btn btn-secondary" id="undo-dart-btn">↶ Undo Dart</button>
+                            <button type="button" class="btn btn-primary" id="submit-turn-btn">Submit Turn</button>
+                        </div>
                     </div>
 
-                    <div class="dart-actions">
-                        <button type="button" class="btn btn-secondary" id="undo-dart-btn">↶ Undo Dart</button>
-                        <button type="button" class="btn btn-primary" id="submit-turn-btn">Submit Turn</button>
+                    <!-- Live Rankings Board (Side by side) -->
+                    <div id="live-rankings" class="live-rankings">
+                        <div class="rankings-title">📊 Live Rankings</div>
+                        <div id="rankings-list" class="rankings-list">
+                            <!-- Dynamically generated -->
+                        </div>
                     </div>
                 </div>
 
-                <!-- Turn History -->
+                <!-- Turn History Section (Full width at bottom) -->
                 <div class="turn-history-section">
                     <h3>Turn History</h3>
                     <div id="turn-history" class="turn-history-list">
@@ -205,6 +240,7 @@
             <div id="history-page" class="page">
                 <div class="page-header">
                     <h1>Game History</h1>
+                    <p id="history-games-count" style="font-size: 14px; color: var(--color-text-light);">Loading...</p>
                 </div>
 
                 <!-- Filters -->
@@ -219,6 +255,18 @@
                 <!-- Games List -->
                 <div id="games-history-list" class="games-list">
                     <p class="placeholder">No games yet</p>
+                </div>
+
+                <!-- Pagination Controls -->
+                <div id="pagination-controls" class="pagination-controls" style="display: none;">
+                    <div class="pagination-info">
+                        <span id="pagination-info-text">Page 1 of 1</span>
+                    </div>
+                    <div class="pagination-buttons">
+                        <button id="pagination-prev" class="btn btn-secondary btn-small" disabled>← Previous</button>
+                        <div id="pagination-numbers" class="pagination-numbers"></div>
+                        <button id="pagination-next" class="btn btn-secondary btn-small" disabled>Next →</button>
+                    </div>
                 </div>
             </div>
 
@@ -288,11 +336,22 @@
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="/scripts/storage.js"></script>
-    <script src="/scripts/game.js"></script>
-    <script src="/scripts/stats.js"></script>
-    <script src="/scripts/ui.js"></script>
-    <script src="/scripts/app.js"></script>
+    <!-- Scripts (load in specific order) -->
+    <!-- 1. Device manager (must load first) -->
+    <script src="scripts/device.js"></script>
+    <!-- 2. Supabase client initialization (must load before storage) -->
+    <script src="scripts/supabase-client.js"></script>
+    <!-- 3. Storage layer (uses Supabase) -->
+    <script src="scripts/storage.js"></script>
+    <!-- 4. Game logic -->
+    <script src="scripts/game.js"></script>
+    <!-- 5. Statistics -->
+    <script src="scripts/stats.js"></script>
+    <!-- 6. Router for URL-based navigation -->
+    <script src="scripts/router.js"></script>
+    <!-- 7. UI rendering -->
+    <script src="scripts/ui.js"></script>
+    <!-- 8. Main app logic -->
+    <script src="scripts/app.js"></script>
 </body>
 </html>

@@ -18,14 +18,15 @@ const Game = (() => {
 
         const game = {
             id: Storage.generateUUID(),
-            createdAt: Date.now(),
-            completedAt: null,
-            gameType: parseInt(gameType),
-            winCondition: winBelow ? 'below' : 'exact',
-            scoringMode: scoringMode,
-            currentPlayerIndex: 0,
-            currentTurn: 0,
-            isActive: true,
+            created_at: new Date().toISOString(),
+            completed_at: null,
+            game_type: parseInt(gameType),
+            win_condition: winBelow ? 'below' : 'exact',
+            scoring_mode: scoringMode,
+            current_player_index: 0,
+            current_turn: 0,
+            is_active: true,
+            device_id: Device.getDeviceId(),
             players: []
         };
 
@@ -37,8 +38,8 @@ const Game = (() => {
             game.players.push({
                 id: Storage.generateUUID(),
                 name: playerName,
-                startingScore: game.gameType,
-                currentScore: game.gameType,
+                startingScore: game.game_type,
+                currentScore: game.game_type,
                 turns: [],
                 winner: false,
                 stats: {
@@ -93,7 +94,7 @@ const Game = (() => {
      * Submit a turn for the current player
      */
     function submitTurn(game, dartsInput) {
-        if (!game.isActive) {
+        if (!game.is_active) {
             return { success: false, error: 'Game is not active' };
         }
 
@@ -102,13 +103,13 @@ const Game = (() => {
             return { success: false, error: validation.error };
         }
 
-        const currentPlayer = game.players[game.currentPlayerIndex];
+        const currentPlayer = game.players[game.current_player_index];
         const darts = validation.darts;
         const totalScore = validation.total;
 
         // Check for checkout attempt
         if (currentPlayer.currentScore - totalScore === 0 ||
-            (currentPlayer.currentScore - totalScore < 0 && game.winCondition === 'below')) {
+            (currentPlayer.currentScore - totalScore < 0 && game.win_condition === 'below')) {
             currentPlayer.stats.checkoutAttempts++;
         }
 
@@ -117,10 +118,10 @@ const Game = (() => {
         let busted = false;
 
         if (newScore < 0) {
-            if (game.winCondition === 'exact') {
+            if (game.win_condition === 'exact') {
                 // Bust - score reverts to start of turn
                 busted = true;
-            } else if (game.winCondition === 'below') {
+            } else if (game.win_condition === 'below') {
                 // Below zero wins
                 currentPlayer.currentScore = 0;
             }
@@ -142,7 +143,7 @@ const Game = (() => {
             timestamp: Date.now()
         };
 
-        if (!busted || game.winCondition === 'below') {
+        if (!busted || game.win_condition === 'below') {
             currentPlayer.turns.push(turn);
 
             // Update player stats
@@ -156,17 +157,81 @@ const Game = (() => {
             currentPlayer.turns.push(turn);
         }
 
-        // Check for win
+        // Check for player finish (0 score)
         if (currentPlayer.currentScore === 0) {
-            endGame(game);
-            return { success: true, gameEnded: true, winner: currentPlayer.name };
+            // Mark player as finished with their rank
+            currentPlayer.winner = true;
+            currentPlayer.finish_rank = getNextFinishRank(game);
+
+            // Find next active player (not finished)
+            let nextActiveIndex = -1;
+            let activePlayers = 0;
+
+            for (let i = 0; i < game.players.length; i++) {
+                if (!game.players[i].winner) {
+                    activePlayers++;
+                }
+            }
+
+            // Count active players after current finish
+            let activePlayersRemaining = activePlayers - 1;
+
+            // If only 1 player left, they get last place
+            if (activePlayersRemaining === 0) {
+                // All other players have finished, current player is last
+                endGame(game);
+                return {
+                    success: true,
+                    gameEnded: true,
+                    playerFinished: currentPlayer.name,
+                    finishRank: currentPlayer.finish_rank,
+                    finalRankings: getRankings(game)
+                };
+            }
+
+            // Find next active player (skip all finished players)
+            let searchIndex = (game.current_player_index + 1) % game.players.length;
+            let searchAttempts = 0;
+            while (searchAttempts < game.players.length) {
+                if (!game.players[searchIndex].winner) {
+                    nextActiveIndex = searchIndex;
+                    break;
+                }
+                searchIndex = (searchIndex + 1) % game.players.length;
+                searchAttempts++;
+            }
+
+            // Move to next active player
+            if (nextActiveIndex !== -1) {
+                game.current_player_index = nextActiveIndex;
+            }
+            game.current_turn++;
+
+            return {
+                success: true,
+                gameEnded: false,
+                playerFinished: currentPlayer.name,
+                finishRank: currentPlayer.finish_rank,
+                nextPlayer: game.players[game.current_player_index].name,
+                allRankings: getRankings(game)
+            };
         }
 
-        // Move to next player
-        game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length;
-        game.currentTurn++;
+        // Move to next active player (skip finished ones)
+        let nextPlayerIndex = (game.current_player_index + 1) % game.players.length;
+        let searchAttempts = 0;
+        while (searchAttempts < game.players.length) {
+            if (!game.players[nextPlayerIndex].winner) {
+                game.current_player_index = nextPlayerIndex;
+                break;
+            }
+            nextPlayerIndex = (nextPlayerIndex + 1) % game.players.length;
+            searchAttempts++;
+        }
 
-        return { success: true, gameEnded: false, nextPlayer: game.players[game.currentPlayerIndex].name };
+        game.current_turn++;
+
+        return { success: true, gameEnded: false, nextPlayer: game.players[game.current_player_index].name };
     }
 
     /**
@@ -210,8 +275,8 @@ const Game = (() => {
      * End the current game
      */
     function endGame(game) {
-        game.isActive = false;
-        game.completedAt = Date.now();
+        game.is_active = false;
+        game.completed_at = new Date().toISOString();
 
         // Ensure winner is marked
         const winner = game.players.find(p => p.winner);
@@ -230,8 +295,8 @@ const Game = (() => {
      * Abandon a game without completing it
      */
     function abandonGame(game) {
-        game.isActive = false;
-        game.completedAt = Date.now();
+        game.is_active = false;
+        game.completed_at = new Date().toISOString();
         // Don't mark any winner when abandoned
         return game;
     }
@@ -240,19 +305,22 @@ const Game = (() => {
      * Get current player
      */
     function getCurrentPlayer(game) {
-        return game.players[game.currentPlayerIndex];
+        return game.players[game.current_player_index];
     }
 
     /**
      * Get game summary
      */
     function getGameSummary(game) {
+        const createdTime = new Date(game.created_at).getTime();
+        const completedTime = game.completed_at ? new Date(game.completed_at).getTime() : null;
+
         return {
             id: game.id,
-            createdAt: game.createdAt,
-            completedAt: game.completedAt,
-            gameType: game.gameType,
-            scoringMode: game.scoringMode,
+            created_at: game.created_at,
+            completed_at: game.completed_at,
+            game_type: game.game_type,
+            scoring_mode: game.scoring_mode,
             players: game.players.map(p => ({
                 name: p.name,
                 winner: p.winner,
@@ -261,7 +329,7 @@ const Game = (() => {
                 avgPerDart: p.stats.avgPerDart.toFixed(2),
                 turns: p.turns.length
             })),
-            duration: game.completedAt ? ((game.completedAt - game.createdAt) / 1000 / 60).toFixed(1) : null
+            duration: completedTime ? ((completedTime - createdTime) / 1000 / 60).toFixed(1) : null
         };
     }
 
@@ -298,6 +366,29 @@ const Game = (() => {
         return [0, 20, 25, 30, 40, 50, 60, 80, 100, 120, 140, 160, 180];
     }
 
+    /**
+     * Get the next finish rank (counting finished players)
+     */
+    function getNextFinishRank(game) {
+        const finishedCount = game.players.filter(p => p.finish_rank !== undefined).length;
+        return finishedCount + 1;
+    }
+
+    /**
+     * Get final rankings sorted by finish order
+     */
+    function getRankings(game) {
+        return game.players
+            .map(p => ({
+                name: p.name,
+                rank: p.finish_rank,
+                score: p.currentScore,
+                darts: p.stats.totalDarts,
+                avgPerDart: p.stats.totalDarts > 0 ? (p.stats.totalScore / p.stats.totalDarts).toFixed(2) : 0
+            }))
+            .sort((a, b) => (a.rank || 999) - (b.rank || 999));
+    }
+
     // Public API
     return {
         createGame,
@@ -311,6 +402,7 @@ const Game = (() => {
         getGameSummary,
         getPlayerTurnHistory,
         formatDuration,
-        getQuickDarts
+        getQuickDarts,
+        getRankings
     };
 })();

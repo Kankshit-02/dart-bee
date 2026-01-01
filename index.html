@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Dart Game Score Manager - Track your dart games with detailed statistics">
+    <meta name="theme-color" content="#7d5f92">
+
+    <title>Dart Bee - Game Score Manager</title>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/styles/main.css">
+    <link rel="stylesheet" href="/styles/components.css">
+
+    <!-- Manifest for PWA -->
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐝</text></svg>">
+</head>
+<body>
+    <div id="app" class="app-container">
+        <!-- Navigation Bar -->
+        <nav class="navbar">
+            <div class="navbar-brand">
+                <span class="bee-icon">🐝</span>
+                <span class="app-title">Dart Bee</span>
+            </div>
+            <div class="navbar-nav">
+                <button class="nav-link active" data-page="home" aria-label="Home">
+                    <span class="icon">🏠</span>
+                    <span class="label">Home</span>
+                </button>
+                <button class="nav-link" data-page="new-game" aria-label="New Game">
+                    <span class="icon">➕</span>
+                    <span class="label">New Game</span>
+                </button>
+                <button class="nav-link" data-page="history" aria-label="History">
+                    <span class="icon">📋</span>
+                    <span class="label">History</span>
+                </button>
+                <button class="nav-link" data-page="leaderboard" aria-label="Leaderboard">
+                    <span class="icon">🏆</span>
+                    <span class="label">Leaderboard</span>
+                </button>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Home Page -->
+            <div id="home-page" class="page active">
+                <div class="page-header">
+                    <h1>Welcome to Dart Bee</h1>
+                    <p>Track your dart games and dominate the leaderboard</p>
+                </div>
+
+                <div class="home-grid">
+                    <!-- Quick Start Section -->
+                    <section class="home-section">
+                        <button class="btn btn-primary btn-large" id="quick-new-game">
+                            <span class="icon">➕</span>
+                            Start New Game
+                        </button>
+                    </section>
+
+                    <!-- Recent Games Section -->
+                    <section class="home-section">
+                        <h2>Recent Games</h2>
+                        <div id="recent-games-list" class="games-list">
+                            <p class="placeholder">No games yet. Start your first game!</p>
+                        </div>
+                    </section>
+
+                    <!-- Quick Stats Section -->
+                    <section class="home-section">
+                        <h2>Your Stats</h2>
+                        <div id="quick-stats" class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-label">Games Played</div>
+                                <div class="stat-value" id="stat-games">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Win Rate</div>
+                                <div class="stat-value" id="stat-win-rate">—</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Avg Per Dart</div>
+                                <div class="stat-value" id="stat-avg-dart">—</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Best 180s</div>
+                                <div class="stat-value" id="stat-180s">0</div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- New Game Page -->
+            <div id="new-game-page" class="page">
+                <div class="page-header">
+                    <h1>Create New Game</h1>
+                </div>
+
+                <form id="new-game-form" class="form-container">
+                    <!-- Number of Players -->
+                    <div class="form-group">
+                        <label for="player-count">Number of Players</label>
+                        <div class="form-control">
+                            <button type="button" class="stepper-btn" id="decrease-players">−</button>
+                            <input type="number" id="player-count" name="playerCount" min="1" max="8" value="2" readonly>
+                            <button type="button" class="stepper-btn" id="increase-players">+</button>
+                        </div>
+                    </div>
+
+                    <!-- Player Names -->
+                    <div class="form-group">
+                        <label>Player Names (Optional)</label>
+                        <div id="player-names-container" class="player-names-grid">
+                            <!-- Dynamically generated -->
+                        </div>
+                    </div>
+
+                    <!-- Game Type -->
+                    <div class="form-group">
+                        <label for="game-type">Starting Points</label>
+                        <select id="game-type" name="gameType">
+                            <option value="101">101</option>
+                            <option value="201">201</option>
+                            <option value="301">301</option>
+                            <option value="501" selected>501 (Standard)</option>
+                            <option value="701">701</option>
+                            <option value="1001">1001</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        <input type="number" id="custom-points" name="customPoints" min="1" max="9999" placeholder="Enter custom points" class="hidden">
+                    </div>
+
+                    <!-- Win Condition -->
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="win-below" name="winBelow">
+                            <span>Win at zero or below (instead of exact zero)</span>
+                        </label>
+                    </div>
+
+                    <!-- Scoring Mode -->
+                    <div class="form-group">
+                        <label>Scoring Mode</label>
+                        <div class="radio-group">
+                            <label>
+                                <input type="radio" name="scoringMode" value="per-dart" checked>
+                                <span>Per Dart (Enter 3 darts per turn - recommended for stats)</span>
+                            </label>
+                            <label>
+                                <input type="radio" name="scoringMode" value="per-turn">
+                                <span>Per Turn Total (Enter total of all 3 darts)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Submit -->
+                    <button type="submit" class="btn btn-primary btn-large">Start Playing</button>
+                </form>
+            </div>
+
+            <!-- Active Game Page -->
+            <div id="active-game-page" class="page">
+                <div class="page-header">
+                    <h1 id="game-title">Game</h1>
+                    <button class="btn btn-secondary btn-small" id="end-game-btn">End Game</button>
+                </div>
+
+                <!-- Score Board -->
+                <div id="scoreboard" class="scoreboard">
+                    <!-- Dynamically generated player scores -->
+                </div>
+
+                <!-- Dart Entry -->
+                <div class="dart-entry-section">
+                    <h2 id="current-player-name">Player 1</h2>
+
+                    <div id="dart-inputs-container" class="dart-inputs">
+                        <!-- Dynamically generated dart inputs -->
+                    </div>
+
+                    <div class="dart-actions">
+                        <button type="button" class="btn btn-secondary" id="undo-dart-btn">↶ Undo Dart</button>
+                        <button type="button" class="btn btn-primary" id="submit-turn-btn">Submit Turn</button>
+                    </div>
+                </div>
+
+                <!-- Turn History -->
+                <div class="turn-history-section">
+                    <h3>Turn History</h3>
+                    <div id="turn-history" class="turn-history-list">
+                        <!-- Dynamically generated history -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Game History Page -->
+            <div id="history-page" class="page">
+                <div class="page-header">
+                    <h1>Game History</h1>
+                </div>
+
+                <!-- Filters -->
+                <div class="filter-section">
+                    <input type="text" id="history-player-filter" placeholder="Filter by player..." class="form-input">
+                    <select id="history-sort" class="form-input">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                    </select>
+                </div>
+
+                <!-- Games List -->
+                <div id="games-history-list" class="games-list">
+                    <p class="placeholder">No games yet</p>
+                </div>
+            </div>
+
+            <!-- Game Detail Page -->
+            <div id="game-detail-page" class="page hidden">
+                <div class="page-header">
+                    <button class="btn btn-secondary btn-small" id="back-to-history">← Back</button>
+                    <h1 id="detail-game-title">Game Details</h1>
+                </div>
+
+                <div id="game-detail-content" class="detail-content">
+                    <!-- Dynamically generated -->
+                </div>
+            </div>
+
+            <!-- Leaderboard Page -->
+            <div id="leaderboard-page" class="page">
+                <div class="page-header">
+                    <h1>Leaderboard</h1>
+                </div>
+
+                <!-- Time Filter -->
+                <div class="filter-section">
+                    <div class="time-filters">
+                        <button class="filter-btn active" data-filter="all-time">All Time</button>
+                        <button class="filter-btn" data-filter="30-days">Last 30 Days</button>
+                        <button class="filter-btn" data-filter="7-days">Last 7 Days</button>
+                    </div>
+                </div>
+
+                <!-- Leaderboard Tabs -->
+                <div class="leaderboard-tabs">
+                    <button class="tab-btn active" data-tab="wins">Most Wins</button>
+                    <button class="tab-btn" data-tab="win-rate">Best Win Rate</button>
+                    <button class="tab-btn" data-tab="avg-dart">Avg Per Dart</button>
+                    <button class="tab-btn" data-tab="180s">Most 180s</button>
+                </div>
+
+                <!-- Rankings -->
+                <div id="leaderboard-content" class="leaderboard-list">
+                    <p class="placeholder">No games yet</p>
+                </div>
+            </div>
+
+            <!-- Player Profile Page -->
+            <div id="player-profile-page" class="page hidden">
+                <div class="page-header">
+                    <button class="btn btn-secondary btn-small" id="back-to-leaderboard">← Back</button>
+                    <h1 id="profile-player-name">Player Profile</h1>
+                </div>
+
+                <div id="player-profile-content" class="profile-content">
+                    <!-- Dynamically generated -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Modal Dialog -->
+    <div id="modal" class="modal hidden">
+        <div class="modal-content">
+            <button class="modal-close" id="modal-close">&times;</button>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/scripts/storage.js"></script>
+    <script src="/scripts/game.js"></script>
+    <script src="/scripts/stats.js"></script>
+    <script src="/scripts/ui.js"></script>
+    <script src="/scripts/app.js"></script>
+</body>
+</html>

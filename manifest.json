@@ -1,0 +1,62 @@
+{
+  "name": "Dart Bee - Game Score Manager",
+  "short_name": "Dart Bee",
+  "description": "Track your dart games with detailed statistics and leaderboards",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbf5ff",
+  "theme_color": "#7d5f92",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><text y='155' font-size='180' text-anchor='middle' x='96'>🐝</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><text y='410' font-size='480' text-anchor='middle' x='256'>🐝</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'><rect fill='%23fbf5ff' width='540' height='720'/><text x='270' y='360' font-size='100' text-anchor='middle' fill='%237d5f92'>Dart Bee</text></svg>",
+      "sizes": "540x720",
+      "type": "image/svg+xml",
+      "form_factor": "narrow"
+    }
+  ],
+  "categories": ["games", "sports"],
+  "shortcuts": [
+    {
+      "name": "New Game",
+      "short_name": "New Game",
+      "description": "Start a new dart game",
+      "url": "/?mode=new-game",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><text y='75' font-size='90' text-anchor='middle' x='48'>➕</text></svg>",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Leaderboard",
+      "short_name": "Leaderboard",
+      "description": "View leaderboard rankings",
+      "url": "/?mode=leaderboard",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><text y='75' font-size='90' text-anchor='middle' x='48'>🏆</text></svg>",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ]
+}

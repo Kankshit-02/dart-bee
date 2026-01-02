@@ -55,13 +55,20 @@ const Storage = (() => {
     /**
      * Get all games (ordered by creation date, newest first)
      */
-    async function getGames() {
+    async function getGames(limit = null) {
         try {
             const sb = ensureInitialized();
-            const { data, error } = await sb
+            let query = sb
                 .from('games')
                 .select('*')
                 .order('created_at', { ascending: false });
+
+            // Apply limit at database level for efficiency
+            if (limit !== null && limit > 0) {
+                query = query.limit(limit);
+            }
+
+            const { data, error } = await query;
 
             if (error) {
                 console.error('Error fetching games:', error);

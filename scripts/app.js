@@ -460,9 +460,31 @@ const App = (() => {
         const modal = document.getElementById('game-completion-modal');
         const rankingsDiv = document.getElementById('completion-rankings');
 
+        console.log('showGameCompletionModal called');
+        console.log('finalRankings:', finalRankings);
+        console.log('finalRankings type:', typeof finalRankings);
+        console.log('finalRankings is array:', Array.isArray(finalRankings));
+        console.log('finalRankings length:', finalRankings ? finalRankings.length : 'N/A');
+        console.log('modal element found:', !!modal);
+        console.log('rankingsDiv element found:', !!rankingsDiv);
+
+        if (!modal || !rankingsDiv) {
+            console.error('Modal or rankings div not found!');
+            return;
+        }
+
+        if (!finalRankings || !Array.isArray(finalRankings) || finalRankings.length === 0) {
+            console.error('No valid rankings data available!', finalRankings);
+            rankingsDiv.innerHTML = '<p>No rankings available</p>';
+            UI.showModal(modal);
+            return;
+        }
+
         // Display final rankings
         let rankingsHtml = '<div class="final-rankings">';
+        console.log('Rendering rankings:');
         finalRankings.forEach((player, index) => {
+            console.log(`  Ranking ${index}:`, player);
             const medals = ['🥇', '🥈', '🥉'];
             const medal = medals[index] || '🏅';
             const position = index + 1;
@@ -482,7 +504,9 @@ const App = (() => {
         });
         rankingsHtml += '</div>';
 
+        console.log('Rankings HTML:', rankingsHtml);
         rankingsDiv.innerHTML = rankingsHtml;
+        console.log('Rankings HTML set in DOM');
         UI.showModal(modal);
     }
 

@@ -118,7 +118,8 @@ const UI = (() => {
                 }
                 return isInterrupted;
             });
-            const completedGames = allGames.filter(g => g.completed_at).slice(-5).reverse();
+            // Get only 5 most recent completed games (already ordered by database as newest first)
+            const completedGames = allGames.filter(g => g.completed_at).slice(0, 5);
 
             console.log('Interrupted games:', interruptedGames.length);
             console.log('Completed games:', completedGames.length);

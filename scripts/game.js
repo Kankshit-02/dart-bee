@@ -194,13 +194,25 @@ const Game = (() => {
             if (activePlayersRemaining === 0) {
                 // All other players have finished
                 assignRankingsByFinishTurn(game);
+
+                // DEBUG: Log player finish ranks before final ranking
+                console.log('Before getRankings - player finish_ranks:');
+                game.players.forEach((p, idx) => {
+                    console.log(`  Player ${idx} (${p.name}): finish_turn=${p.finish_turn}, finish_rank=${p.finish_rank}`);
+                });
+
                 endGame(game);
+                const finalRankings = getRankings(game);
+
+                console.log('Final rankings returned:', finalRankings);
+                console.log('Final rankings length:', finalRankings ? finalRankings.length : 'undefined');
+
                 return {
                     success: true,
                     gameEnded: true,
                     playerFinished: currentPlayer.name,
                     finishRank: currentPlayer.finish_rank,
-                    finalRankings: getRankings(game)
+                    finalRankings: finalRankings
                 };
             }
 
@@ -240,7 +252,7 @@ const Game = (() => {
      * Undo last dart
      */
     function undoLastDart(game) {
-        const currentPlayer = game.players[game.currentPlayerIndex];
+        const currentPlayer = game.players[game.current_player_index];
         if (currentPlayer.turns.length === 0) {
             return { success: false, error: 'No turns to undo' };
         }

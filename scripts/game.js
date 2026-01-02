@@ -221,10 +221,14 @@ const Game = (() => {
                 game.current_player_index = nextActiveIndex;
             }
 
+            // Calculate rank for this player based on finish turn
+            const finishRank = calculateCurrentRank(game, currentPlayer.finish_turn);
+
             return {
                 success: true,
                 gameEnded: false,
                 playerFinished: currentPlayer.name,
+                finishRank: finishRank,
                 finishTurn: currentPlayer.finish_turn,
                 nextPlayer: game.players[game.current_player_index].name,
                 allRankings: getRankings(game)
@@ -419,6 +423,21 @@ const Game = (() => {
     function getNextFinishRank(game) {
         const finishedCount = game.players.filter(p => p.finish_rank !== undefined).length;
         return finishedCount + 1;
+    }
+
+    /**
+     * Calculate the current rank of a player based on their finish_turn
+     */
+    function calculateCurrentRank(game, playerFinishTurn) {
+        const finishedPlayers = game.players
+            .filter(p => p.finish_turn !== undefined && p.finish_turn < playerFinishTurn)
+            .map(p => p.finish_turn);
+
+        // Get unique finish turns that came before this player
+        const uniqueEarlierTurns = [...new Set(finishedPlayers)].sort((a, b) => a - b);
+
+        // Rank is 1 + number of unique earlier finish turns
+        return uniqueEarlierTurns.length + 1;
     }
 
     /**

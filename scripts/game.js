@@ -159,9 +159,9 @@ const Game = (() => {
 
         // Check for player finish (0 score)
         if (currentPlayer.currentScore === 0) {
-            // Mark player as finished with their rank
+            // Mark player as finished (but don't rank yet - wait for round end)
             currentPlayer.winner = true;
-            currentPlayer.finish_rank = getNextFinishRank(game);
+            currentPlayer.finish_turn = game.current_turn; // Track which turn they finished
 
             // Find next active player (not finished)
             let nextActiveIndex = -1;
@@ -176,20 +176,7 @@ const Game = (() => {
             // Count active players after current finish
             let activePlayersRemaining = activePlayers - 1;
 
-            // If only 1 player left, they get last place
-            if (activePlayersRemaining === 0) {
-                // All other players have finished, current player is last
-                endGame(game);
-                return {
-                    success: true,
-                    gameEnded: true,
-                    playerFinished: currentPlayer.name,
-                    finishRank: currentPlayer.finish_rank,
-                    finalRankings: getRankings(game)
-                };
-            }
-
-            // Find next active player (skip all finished players)
+            // Move to next active player (skip all finished players)
             let searchIndex = (game.current_player_index + 1) % game.players.length;
             let searchAttempts = 0;
             while (searchAttempts < game.players.length) {
@@ -201,17 +188,32 @@ const Game = (() => {
                 searchAttempts++;
             }
 
+            game.current_turn++;
+
+            // If only 1 player left, they get last place - update all rankings
+            if (activePlayersRemaining === 0) {
+                // All other players have finished
+                assignRankingsByFinishTurn(game);
+                endGame(game);
+                return {
+                    success: true,
+                    gameEnded: true,
+                    playerFinished: currentPlayer.name,
+                    finishRank: currentPlayer.finish_rank,
+                    finalRankings: getRankings(game)
+                };
+            }
+
             // Move to next active player
             if (nextActiveIndex !== -1) {
                 game.current_player_index = nextActiveIndex;
             }
-            game.current_turn++;
 
             return {
                 success: true,
                 gameEnded: false,
                 playerFinished: currentPlayer.name,
-                finishRank: currentPlayer.finish_rank,
+                finishTurn: currentPlayer.finish_turn,
                 nextPlayer: game.players[game.current_player_index].name,
                 allRankings: getRankings(game)
             };
@@ -369,6 +371,39 @@ const Game = (() => {
     /**
      * Get the next finish rank (counting finished players)
      */
+    /**
+     * Assign rankings based on finish turn
+     * Players finishing in same turn get same rank
+     */
+    function assignRankingsByFinishTurn(game) {
+        // Get all finished players with their finish turns
+        const finishedPlayers = game.players
+            .filter(p => p.finish_turn !== undefined)
+            .map(p => ({
+                player: p,
+                finishTurn: p.finish_turn
+            }));
+
+        // Sort by finish turn (ascending)
+        finishedPlayers.sort((a, b) => a.finishTurn - b.finishTurn);
+
+        // Assign ranks
+        let currentRank = 1;
+        let lastFinishTurn = -1;
+        let playersAtCurrentRank = 0;
+
+        for (const { player, finishTurn } of finishedPlayers) {
+            if (finishTurn !== lastFinishTurn) {
+                // New finish turn, move to next rank(s)
+                currentRank += playersAtCurrentRank;
+                playersAtCurrentRank = 0;
+                lastFinishTurn = finishTurn;
+            }
+            player.finish_rank = currentRank;
+            playersAtCurrentRank++;
+        }
+    }
+
     function getNextFinishRank(game) {
         const finishedCount = game.players.filter(p => p.finish_rank !== undefined).length;
         return finishedCount + 1;
@@ -403,6 +438,7 @@ const Game = (() => {
         getPlayerTurnHistory,
         formatDuration,
         getQuickDarts,
-        getRankings
+        getRankings,
+        assignRankingsByFinishTurn
     };
 })();

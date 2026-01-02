@@ -1095,6 +1095,7 @@ const UI = (() => {
 
     // Store previous rankings for animation tracking
     let previousRankings = {};
+    let previousPositions = {}; // Track position changes
 
     /**
      * Update live rankings board with Olympic medal podium style
@@ -1197,10 +1198,20 @@ const UI = (() => {
 
             activePlayers.forEach((player, index) => {
                 let scoreChangeIndicator = '';
+                let positionChangeIndicator = '';
                 let animationClass = '';
 
-                // Only show score changes if animating (round completed)
+                // Calculate position
+                const position = finishedPlayers.length + index + 1;
+                let suffix = 'th';
+                if (position % 10 === 1 && position % 100 !== 11) suffix = 'st';
+                else if (position % 10 === 2 && position % 100 !== 12) suffix = 'nd';
+                else if (position % 10 === 3 && position % 100 !== 13) suffix = 'rd';
+                const positionLabel = position + suffix;
+
+                // Only show changes if animating (round completed)
                 if (animate) {
+                    // Score changes
                     const prevScore = previousRankings[player.name];
                     if (prevScore !== undefined && prevScore !== player.score) {
                         if (prevScore > player.score) {
@@ -1211,22 +1222,28 @@ const UI = (() => {
                             animationClass = 'score-up';
                         }
                     }
-                }
 
-                // Calculate position
-                const position = finishedPlayers.length + index + 1;
-                let suffix = 'th';
-                if (position % 10 === 1 && position % 100 !== 11) suffix = 'st';
-                else if (position % 10 === 2 && position % 100 !== 12) suffix = 'nd';
-                else if (position % 10 === 3 && position % 100 !== 13) suffix = 'rd';
-                const positionLabel = position + suffix;
+                    // Position changes
+                    const prevPosition = previousPositions[player.name];
+                    if (prevPosition !== undefined && prevPosition !== position) {
+                        if (prevPosition > position) {
+                            positionChangeIndicator = ' 📈'; // Moved up
+                            animationClass += ' position-up';
+                        } else if (prevPosition < position) {
+                            positionChangeIndicator = ' 📉'; // Moved down
+                            animationClass += ' position-down';
+                        }
+                    } else if (prevPosition !== undefined && prevPosition === position) {
+                        positionChangeIndicator = ' ➡️'; // Stayed same
+                    }
+                }
 
                 html += `
                     <div class="ranking-item active ${animationClass}" data-player="${player.name}">
                         <div class="ranking-medal">${positionLabel}</div>
                         <div class="ranking-info">
                             <div class="ranking-name">${player.name}</div>
-                            <div class="ranking-detail">In Progress${scoreChangeIndicator}</div>
+                            <div class="ranking-detail">In Progress${scoreChangeIndicator}${positionChangeIndicator}</div>
                         </div>
                         <div class="ranking-score">
                             <div>${player.score}</div>
@@ -1238,6 +1255,7 @@ const UI = (() => {
                 // Only update previous rankings if animating
                 if (animate) {
                     previousRankings[player.name] = player.score;
+                    previousPositions[player.name] = position;
                 }
             });
         }

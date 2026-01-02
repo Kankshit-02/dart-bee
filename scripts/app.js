@@ -195,6 +195,10 @@ const App = (() => {
         document.getElementById('undo-dart-btn')?.addEventListener('click', undoTurn);
         document.getElementById('end-game-btn')?.addEventListener('click', endGame);
         document.getElementById('share-game-btn')?.addEventListener('click', shareGame);
+        document.getElementById('rematch-btn')?.addEventListener('click', startRematch);
+        document.getElementById('home-btn')?.addEventListener('click', () => {
+            Router.navigate('home');
+        });
     }
 
     /**
@@ -400,10 +404,8 @@ const App = (() => {
             if (result.gameEnded) {
                 UI.updateWinnersBoard(result.finalRankings, true);
                 setTimeout(() => {
-                    UI.showToast('Game Complete! Redirecting to home...', 'info');
-                    currentGame = null;
-                    Router.navigate('home');
-                }, 3000);
+                    showGameCompletionModal(result.finalRankings);
+                }, 800);
             } else {
                 // Continue with next player
                 setTimeout(() => {
@@ -449,6 +451,74 @@ const App = (() => {
             UI.showToast('Game ended', 'info');
             Router.navigate('home');
         }
+    }
+
+    /**
+     * Show game completion modal with final rankings
+     */
+    function showGameCompletionModal(finalRankings) {
+        const modal = document.getElementById('game-completion-modal');
+        const rankingsDiv = document.getElementById('completion-rankings');
+
+        // Display final rankings
+        let rankingsHtml = '<div class="final-rankings">';
+        finalRankings.forEach((player, index) => {
+            const medals = ['🥇', '🥈', '🥉'];
+            const medal = medals[index] || '🏅';
+            const position = index + 1;
+            let suffix = 'th';
+            if (position % 10 === 1 && position % 100 !== 11) suffix = 'st';
+            else if (position % 10 === 2 && position % 100 !== 12) suffix = 'nd';
+            else if (position % 10 === 3 && position % 100 !== 13) suffix = 'rd';
+
+            rankingsHtml += `
+                <div class="ranking-row">
+                    <span class="rank-medal">${medal}</span>
+                    <span class="rank-position">${position}${suffix}</span>
+                    <span class="rank-name">${player.name}</span>
+                    <span class="rank-stats">${player.darts} darts • ${parseFloat(player.avgPerDart).toFixed(1)} avg</span>
+                </div>
+            `;
+        });
+        rankingsHtml += '</div>';
+
+        rankingsDiv.innerHTML = rankingsHtml;
+        UI.showModal(modal);
+    }
+
+    /**
+     * Start a rematch with the same players
+     */
+    async function startRematch() {
+        if (!currentGame) return;
+
+        // Extract player names from current game
+        const playerNames = currentGame.players.map(p => p.name);
+        const gameType = currentGame.game_type;
+        const winCondition = currentGame.win_condition;
+        const scoringMode = currentGame.scoring_mode;
+
+        // Hide completion modal
+        const modal = document.getElementById('game-completion-modal');
+        UI.hideModal(modal);
+
+        // Create new game with same settings
+        const newGame = Game.createGame({
+            playerCount: playerNames.length,
+            playerNames: playerNames,
+            gameType: gameType,
+            winBelow: winCondition === 'below',
+            scoringMode: scoringMode
+        });
+
+        // Save to database
+        await Storage.saveGame(newGame);
+
+        // Load and display the new game
+        currentGame = newGame;
+        loadActiveGame(newGame.id);
+
+        UI.showToast('Starting rematch...', 'info');
     }
 
     /**

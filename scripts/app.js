@@ -507,7 +507,8 @@ const App = (() => {
         console.log('Rankings HTML:', rankingsHtml);
         rankingsDiv.innerHTML = rankingsHtml;
         console.log('Rankings HTML set in DOM');
-        UI.showModal(modal);
+        // Show the game completion modal directly (don't use UI.showModal which is for generic modal)
+        modal.classList.remove('hidden');
     }
 
     /**
@@ -524,7 +525,7 @@ const App = (() => {
 
         // Hide completion modal
         const modal = document.getElementById('game-completion-modal');
-        UI.hideModal(modal);
+        modal.classList.add('hidden');
 
         // Create new game with same settings
         const newGame = Game.createGame({

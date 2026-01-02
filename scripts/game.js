@@ -390,6 +390,7 @@ const Game = (() => {
     /**
      * Assign rankings based on finish turn
      * Players finishing in same turn get same rank
+     * Last player (who didn't finish) gets last rank
      */
     function assignRankingsByFinishTurn(game) {
         // Get all finished players with their finish turns
@@ -417,6 +418,15 @@ const Game = (() => {
             }
             player.finish_rank = currentRank;
             playersAtCurrentRank++;
+        }
+
+        // Assign rank to any unfinished players (they get the last rank)
+        const unfinishedPlayers = game.players.filter(p => p.finish_turn === undefined);
+        if (unfinishedPlayers.length > 0) {
+            const lastRank = game.players.length - unfinishedPlayers.length + 1;
+            unfinishedPlayers.forEach(p => {
+                p.finish_rank = lastRank;
+            });
         }
     }
 

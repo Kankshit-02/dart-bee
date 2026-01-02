@@ -6,6 +6,28 @@
 const App = (() => {
     let currentGame = null;
     let isSpectatorMode = false;
+    let isOperationInProgress = false;
+
+    /**
+     * Check if an operation is in progress
+     */
+    function isOperationPending() {
+        return isOperationInProgress;
+    }
+
+    /**
+     * Mark operation as started
+     */
+    function startOperation() {
+        isOperationInProgress = true;
+    }
+
+    /**
+     * Mark operation as complete
+     */
+    function endOperation() {
+        isOperationInProgress = false;
+    }
 
     /**
      * Initialize the app and setup all event listeners
@@ -69,11 +91,13 @@ const App = (() => {
      * Load game from URL - determine if active or spectator
      */
     async function loadGameFromUrl(gameId) {
+        UI.showLoader('Loading game...');
         try {
             const game = await Storage.getGame(gameId);
             if (!game) {
                 UI.showToast('Game not found', 'error');
                 loadHome();
+                UI.hideLoader();
                 return;
             }
 
@@ -89,10 +113,12 @@ const App = (() => {
                 UI.showToast('🎮 Game Resumed', 'info');
                 loadActiveGame();
             }
+            UI.hideLoader();
         } catch (error) {
             console.error('Error loading game:', error);
             UI.showToast('Failed to load game', 'error');
             loadHome();
+            UI.hideLoader();
         }
     }
 
@@ -303,8 +329,16 @@ const App = (() => {
      * Load home page
      */
     async function loadHome() {
-        UI.showPage('home-page');
-        await UI.renderRecentGames();
+        UI.showLoader('Loading dashboard...');
+        try {
+            UI.showPage('home-page');
+            await UI.renderRecentGames();
+        } catch (error) {
+            console.error('Error loading home:', error);
+            UI.showToast('Failed to load dashboard', 'error');
+        } finally {
+            UI.hideLoader();
+        }
     }
 
     /**
@@ -359,65 +393,81 @@ const App = (() => {
      * Submit current turn
      */
     async function submitTurn() {
-        if (!currentGame) return;
+        if (!currentGame || isOperationInProgress) return;
 
-        const inputs = document.querySelectorAll('.dart-input');
-        console.log('Found dart inputs:', inputs.length);
+        // Prevent multiple submissions
+        startOperation();
+        UI.showLoader('Submitting turn...');
 
-        const darts = Array.from(inputs)
-            .map(input => input.value)
-            .filter(v => v);
+        try {
+            const inputs = document.querySelectorAll('.dart-input');
+            console.log('Found dart inputs:', inputs.length);
 
-        console.log('Darts to submit:', darts);
+            const darts = Array.from(inputs)
+                .map(input => input.value)
+                .filter(v => v);
 
-        if (darts.length === 0) {
-            UI.showToast('Please enter at least one dart', 'warning');
-            return;
-        }
+            console.log('Darts to submit:', darts);
 
-        // Track previous turn before submitting
-        const previousTurn = currentGame.current_turn;
-
-        const result = Game.submitTurn(currentGame, darts);
-        console.log('Turn submission result:', result);
-
-        if (!result.success) {
-            UI.showToast(result.error, 'error');
-            return;
-        }
-
-        console.log('Saving game to database...');
-        await Storage.updateGame(currentGame.id, currentGame);
-        console.log('Game saved successfully');
-
-        // Determine if round completed (current_turn increased)
-        const roundCompleted = currentGame.current_turn > previousTurn;
-        console.log(`Round completed: ${roundCompleted} (prev: ${previousTurn}, curr: ${currentGame.current_turn})`);
-
-        // Player finished - update winners board
-        if (result.playerFinished) {
-            // Always animate when player finishes
-            UI.updateWinnersBoard(result.allRankings, true);
-            UI.showToast(`🏆 ${result.playerFinished} finished in ${['1st', '2nd', '3rd'][result.finishRank - 1] || result.finishRank + 'th'} place!`, 'success');
-
-            // If game ended (last player finished)
-            if (result.gameEnded) {
-                UI.updateWinnersBoard(result.finalRankings, true);
-                setTimeout(() => {
-                    showGameCompletionModal(result.finalRankings);
-                }, 800);
-            } else {
-                // Continue with next player
-                setTimeout(() => {
-                    UI.updateActiveGameUI(currentGame, false); // Don't animate on next player setup
-                    UI.showToast(`Next: ${result.nextPlayer}`, 'info');
-                }, 800);
+            if (darts.length === 0) {
+                UI.showToast('Please enter at least one dart', 'warning');
+                endOperation();
+                UI.hideLoader();
+                return;
             }
-        } else {
-            // Update rankings: animate only if round completed
-            UI.updateWinnersBoard(result.allRankings || Game.getRankings(currentGame), roundCompleted);
-            UI.updateActiveGameUI(currentGame, false); // Don't animate on regular update
-            UI.showToast(`Next: ${result.nextPlayer}`, 'info');
+
+            // Track previous turn before submitting
+            const previousTurn = currentGame.current_turn;
+
+            const result = Game.submitTurn(currentGame, darts);
+            console.log('Turn submission result:', result);
+
+            if (!result.success) {
+                UI.showToast(result.error, 'error');
+                endOperation();
+                UI.hideLoader();
+                return;
+            }
+
+            console.log('Saving game to database...');
+            await Storage.updateGame(currentGame.id, currentGame);
+            console.log('Game saved successfully');
+
+            // Determine if round completed (current_turn increased)
+            const roundCompleted = currentGame.current_turn > previousTurn;
+            console.log(`Round completed: ${roundCompleted} (prev: ${previousTurn}, curr: ${currentGame.current_turn})`);
+
+            // Player finished - update winners board
+            if (result.playerFinished) {
+                // Always animate when player finishes
+                UI.updateWinnersBoard(result.allRankings, true);
+                UI.showToast(`🏆 ${result.playerFinished} finished in ${['1st', '2nd', '3rd'][result.finishRank - 1] || result.finishRank + 'th'} place!`, 'success');
+
+                // If game ended (last player finished)
+                if (result.gameEnded) {
+                    UI.updateWinnersBoard(result.finalRankings, true);
+                    setTimeout(() => {
+                        showGameCompletionModal(result.finalRankings);
+                    }, 800);
+                } else {
+                    // Continue with next player
+                    setTimeout(() => {
+                        UI.updateActiveGameUI(currentGame, false); // Don't animate on next player setup
+                        UI.showToast(`Next: ${result.nextPlayer}`, 'info');
+                    }, 800);
+                }
+            } else {
+                // Update rankings: animate only if round completed
+                UI.updateWinnersBoard(result.allRankings || Game.getRankings(currentGame), roundCompleted);
+                UI.updateActiveGameUI(currentGame, false); // Don't animate on regular update
+                UI.showToast(`Next: ${result.nextPlayer}`, 'info');
+            }
+        } catch (error) {
+            console.error('Error submitting turn:', error);
+            UI.showToast('Failed to submit turn', 'error');
+        } finally {
+            endOperation();
+            UI.hideLoader();
         }
     }
 

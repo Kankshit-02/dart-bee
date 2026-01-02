@@ -21,6 +21,24 @@ const UI = (() => {
     }
 
     /**
+     * Show loader overlay
+     */
+    function showLoader(text = 'Loading...') {
+        const loader = document.getElementById('loader');
+        const loaderText = loader.querySelector('.loader-text');
+        loaderText.textContent = text;
+        loader.classList.remove('hidden');
+    }
+
+    /**
+     * Hide loader overlay
+     */
+    function hideLoader() {
+        const loader = document.getElementById('loader');
+        loader.classList.add('hidden');
+    }
+
+    /**
      * Show modal dialog
      */
     function showModal(content, title = '') {
@@ -1277,6 +1295,8 @@ const UI = (() => {
     // Public API
     return {
         showToast,
+        showLoader,
+        hideLoader,
         showModal,
         hideModal,
         showPage,

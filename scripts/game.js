@@ -33,7 +33,6 @@ const Game = (() => {
         // Initialize players
         for (let i = 0; i < playerCount; i++) {
             const playerName = playerNames[i]?.trim() || `Player ${i + 1}`;
-            Storage.getOrCreatePlayer(playerName);
 
             game.players.push({
                 id: Storage.generateUUID(),

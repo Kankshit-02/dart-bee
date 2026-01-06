@@ -1,149 +1,275 @@
 /**
  * Statistics Module
  * Calculates and aggregates player statistics
+ * OPTIMIZED for normalized database schema with materialized views
  */
 
 const Stats = (() => {
     /**
-     * Calculate player statistics from all their games
+     * Get Supabase client with retry
+     */
+    function getSupabaseClient() {
+        const sb = Storage.sb;
+        if (!sb) {
+            throw new Error('Supabase client not initialized. Please wait for Storage.init() to complete.');
+        }
+        return sb;
+    }
+
+    /**
+     * Calculate player statistics from database aggregates
+     * OPTIMIZED: Single query to players table instead of looping through games
      */
     async function calculatePlayerStats(playerName) {
-        const playerProfile = await Storage.getOrCreatePlayer(playerName);
-        const games = await Storage.getPlayerGames(playerName);
+        // Get player aggregates from database (single query)
+        const { data: player, error } = await getSupabaseClient()
+            .from('players')
+            .select('*')
+            .eq('name', playerName)
+            .single();
+
+        if (error || !player) {
+            console.error('Error fetching player stats:', error);
+            return getEmptyStats();
+        }
+
+        // Get recent games for this player
+        const recentGames = await Storage.getPlayerGames(playerName, 5);
+
+        // Calculate head-to-head records
+        const headToHead = await calculateHeadToHead(playerName);
 
         const stats = {
-            gamesPlayed: 0,
-            gamesWon: 0,
-            winRate: 0,
-            totalDarts: 0,
-            totalScore: 0,
-            avgPerDart: 0,
-            avgPerTurn: 0,
-            maxDart: 0,
-            maxTurn: 0,
-            maxTurnCount: 0,
-            total180s: 0,
-            total140plus: 0,
-            bestCheckout: 0,
-            checkoutPercentage: 0,
-            headToHead: {},
-            recentGames: []
+            gamesPlayed: player.total_games_played || 0,
+            gamesWon: player.total_games_won || 0,
+            winRate: player.win_rate ? parseFloat(player.win_rate).toFixed(1) : '0.0',
+            totalDarts: player.total_darts_thrown || 0,
+            totalScore: player.total_score || 0,
+            avgPerDart: player.avg_per_dart ? parseFloat(player.avg_per_dart).toFixed(2) : '0.00',
+            avgPerTurn: player.avg_per_turn ? parseFloat(player.avg_per_turn).toFixed(2) : '0.00',
+            maxDart: player.max_dart_score || 0,
+            maxTurn: player.max_turn_score || 0,
+            total180s: player.total_180s || 0,
+            total140plus: player.total_140_plus || 0,
+            bestCheckout: player.best_checkout || 0,
+            checkoutPercentage: player.checkout_percentage
+                ? parseFloat(player.checkout_percentage).toFixed(1)
+                : '0.0',
+            headToHead: headToHead,
+            recentGames: recentGames.slice(0, 5).map(game => {
+                const playerData = game.players.find(p => p.name === playerName);
+                return {
+                    id: game.id,
+                    date: new Date(game.created_at).toLocaleDateString(),
+                    opponent: game.players.filter(p => p.name !== playerName).map(p => p.name).join(', '),
+                    won: playerData?.winner || false,
+                    darts: playerData?.stats.totalDarts || 0,
+                    score: playerData?.stats.totalScore || 0
+                };
+            })
         };
-
-        games.forEach(game => {
-            const player = game.players.find(p => p.name === playerName);
-            if (!player) return;
-
-            stats.gamesPlayed++;
-            if (player.winner) {
-                stats.gamesWon++;
-            }
-
-            // Record opponent records
-            game.players.forEach(opponent => {
-                if (opponent.name !== playerName) {
-                    if (!stats.headToHead[opponent.name]) {
-                        stats.headToHead[opponent.name] = { wins: 0, losses: 0 };
-                    }
-                    if (player.winner) {
-                        stats.headToHead[opponent.name].wins++;
-                    } else {
-                        stats.headToHead[opponent.name].losses++;
-                    }
-                }
-            });
-
-            // Dart and score stats
-            stats.totalDarts += player.stats.totalDarts;
-            stats.totalScore += player.stats.totalScore;
-            stats.maxDart = Math.max(stats.maxDart, player.stats.maxDart);
-            stats.maxTurn = Math.max(stats.maxTurn, player.stats.maxTurn);
-            stats.maxTurnCount++;
-
-            // Analyze turns for 180s and 140+
-            player.turns.forEach(turn => {
-                const turnTotal = turn.darts.reduce((a, b) => a + b, 0);
-                if (turnTotal === 180) {
-                    stats.total180s++;
-                }
-                if (turnTotal >= 140 && turnTotal < 180) {
-                    stats.total140plus++;
-                }
-            });
-
-            // Checkout stats
-            if (player.stats.checkoutAttempts > 0) {
-                stats.checkoutPercentage = (player.stats.checkoutSuccess / player.stats.checkoutAttempts * 100).toFixed(1);
-                stats.bestCheckout = Math.max(stats.bestCheckout, player.stats.checkoutSuccess);
-            }
-        });
-
-        // Calculate averages per turn (not per dart)
-        const totalTurns = games.reduce((sum, game) => {
-            const player = game.players.find(p => p.name === playerName);
-            return sum + (player?.turns.length || 0);
-        }, 0);
-
-        if (totalTurns > 0) {
-            stats.avgPerDart = (stats.totalScore / totalTurns).toFixed(2);
-            stats.avgPerTurn = (stats.totalScore / totalTurns).toFixed(2);
-        }
-
-        if (stats.gamesPlayed > 0) {
-            stats.winRate = (stats.gamesWon / stats.gamesPlayed * 100).toFixed(1);
-        }
-
-        // Recent games (last 5)
-        stats.recentGames = games.slice(-5).map(game => {
-            const player = game.players.find(p => p.name === playerName);
-            return {
-                id: game.id,
-                date: new Date(game.created_at).toLocaleDateString(),
-                opponent: game.players.filter(p => p.name !== playerName).map(p => p.name).join(', '),
-                won: player.winner,
-                darts: player.stats.totalDarts,
-                score: player.stats.totalScore
-            };
-        }).reverse();
 
         return stats;
     }
 
     /**
-     * Get leaderboard rankings
+     * Calculate head-to-head records for a player
+     * OPTIMIZED: Uses game_players junction table with JOIN
      */
-    async function getLeaderboard(metric = 'wins', timeFilter = 'all-time') {
-        const players = await Storage.getPlayers();
-        const games = await Storage.getGames();
+    async function calculateHeadToHead(playerName) {
+        // Get player ID
+        const { data: playerData } = await getSupabaseClient()
+            .from('players')
+            .select('id')
+            .eq('name', playerName)
+            .single();
 
-        // Filter games by time
-        const cutoffDate = getTimeFilterDate(timeFilter);
-        const filteredGames = games.filter(g => {
-            const gameDate = new Date(g.created_at).getTime();
-            return gameDate >= cutoffDate && g.completed_at;
+        if (!playerData) return {};
+
+        // Query games where this player participated
+        const { data: gamePlayerRecords } = await getSupabaseClient()
+            .from('game_players')
+            .select(`
+                game_id,
+                is_winner,
+                game:games!inner(
+                    id,
+                    completed_at,
+                    game_players!inner(
+                        player:players!inner(name),
+                        is_winner
+                    )
+                )
+            `)
+            .eq('player_id', playerData.id)
+            .not('game.completed_at', 'is', null);
+
+        const headToHead = {};
+
+        (gamePlayerRecords || []).forEach(gp => {
+            const game = gp.game;
+            if (!game || !game.game_players) return;
+
+            // Find opponents in this game
+            game.game_players.forEach(opponent => {
+                if (opponent.player.name === playerName) return;
+
+                const opponentName = opponent.player.name;
+                if (!headToHead[opponentName]) {
+                    headToHead[opponentName] = { wins: 0, losses: 0 };
+                }
+
+                if (gp.is_winner) {
+                    headToHead[opponentName].wins++;
+                } else if (opponent.is_winner) {
+                    headToHead[opponentName].losses++;
+                }
+            });
         });
 
-        const rankings = [];
-        for (const [name, profile] of Object.entries(players)) {
-            // Count games in filtered period
-            const playerGames = filteredGames.filter(g =>
-                g.players.some(p => p.name === name)
-            );
+        return headToHead;
+    }
 
-            if (playerGames.length === 0) {
-                continue;
+    /**
+     * Get leaderboard rankings from materialized view
+     * OPTIMIZED: Single query instead of N+1 pattern
+     */
+    async function getLeaderboard(metric = 'wins', timeFilter = 'all-time') {
+        // Determine which rank column to use
+        const rankColumn = {
+            'wins': 'rank_by_wins',
+            'win-rate': 'rank_by_win_rate',
+            'avg-dart': 'rank_by_avg',
+            '180s': 'rank_by_180s'
+        }[metric] || 'rank_by_wins';
+
+        // For time-based filtering, we need to query games directly
+        // For all-time, use the materialized view
+        if (timeFilter === 'all-time') {
+            const { data, error } = await getSupabaseClient()
+                .from('player_leaderboard')
+                .select('*')
+                .order(rankColumn, { ascending: true })
+                .limit(100);
+
+            if (error) {
+                console.error('Error fetching leaderboard:', error);
+                return [];
             }
 
-            const stats = await calculatePlayerStats(name);
-            const statsInPeriod = calculateStatsForGames(playerGames, name);
-
-            rankings.push({
-                name: name,
-                metric: getMetricValue(metric, statsInPeriod),
-                stats: statsInPeriod,
-                fullStats: stats
-            });
+            return (data || []).map((player, index) => ({
+                rank: index + 1,
+                name: player.name,
+                metric: getMetricValue(metric, player),
+                stats: {
+                    gamesPlayed: player.total_games_played,
+                    gamesWon: player.total_games_won,
+                    winRate: parseFloat(player.win_rate || 0).toFixed(1),
+                    totalDarts: player.total_darts_thrown,
+                    total180s: player.total_180s,
+                    avgPerDart: parseFloat(player.avg_per_dart || 0).toFixed(2)
+                },
+                fullStats: {
+                    gamesPlayed: player.total_games_played,
+                    gamesWon: player.total_games_won,
+                    winRate: parseFloat(player.win_rate || 0).toFixed(1),
+                    totalDarts: player.total_darts_thrown,
+                    totalScore: player.total_score,
+                    avgPerDart: parseFloat(player.avg_per_dart || 0).toFixed(2),
+                    avgPerTurn: parseFloat(player.avg_per_turn || 0).toFixed(2),
+                    maxDart: player.max_dart_score,
+                    maxTurn: player.max_turn_score,
+                    total180s: player.total_180s,
+                    total140plus: player.total_140_plus,
+                    bestCheckout: player.best_checkout,
+                    checkoutPercentage: parseFloat(player.checkout_percentage || 0).toFixed(1)
+                }
+            }));
+        } else {
+            // For time-filtered leaderboards, calculate on-the-fly
+            return await getTimeFilteredLeaderboard(metric, timeFilter);
         }
+    }
+
+    /**
+     * Get time-filtered leaderboard (7-day, 30-day)
+     * Less optimized than all-time, but still better than old N+1 pattern
+     */
+    async function getTimeFilteredLeaderboard(metric, timeFilter) {
+        const cutoffDate = getTimeFilterDate(timeFilter);
+        const cutoffISO = new Date(cutoffDate).toISOString();
+
+        // Get all games in the time period with player stats
+        const { data: games } = await getSupabaseClient()
+            .from('games')
+            .select(`
+                id,
+                created_at,
+                completed_at,
+                game_players!inner(
+                    player_id,
+                    is_winner,
+                    total_darts,
+                    total_score,
+                    total_turns,
+                    player:players!inner(id, name)
+                )
+            `)
+            .gte('created_at', cutoffISO)
+            .not('completed_at', 'is', null);
+
+        // Aggregate stats per player
+        const playerStatsMap = {};
+
+        (games || []).forEach(game => {
+            game.game_players.forEach(gp => {
+                const playerName = gp.player.name;
+                if (!playerStatsMap[playerName]) {
+                    playerStatsMap[playerName] = {
+                        gamesPlayed: 0,
+                        gamesWon: 0,
+                        totalDarts: 0,
+                        totalScore: 0,
+                        totalTurns: 0,
+                        total180s: 0
+                    };
+                }
+
+                const stats = playerStatsMap[playerName];
+                stats.gamesPlayed++;
+                if (gp.is_winner) stats.gamesWon++;
+                stats.totalDarts += gp.total_darts || 0;
+                stats.totalScore += gp.total_score || 0;
+                stats.totalTurns += gp.total_turns || 0;
+                stats.total180s += gp.count_180s || 0;
+            });
+        });
+
+        // Convert to leaderboard format
+        const rankings = Object.entries(playerStatsMap).map(([name, stats]) => {
+            const winRate = stats.gamesPlayed > 0
+                ? (stats.gamesWon / stats.gamesPlayed * 100).toFixed(1)
+                : '0.0';
+            const avgPerDart = stats.totalTurns > 0
+                ? (stats.totalScore / stats.totalTurns).toFixed(2)
+                : '0.00';
+
+            const playerStats = {
+                gamesPlayed: stats.gamesPlayed,
+                gamesWon: stats.gamesWon,
+                winRate: winRate,
+                totalDarts: stats.totalDarts,
+                total180s: stats.total180s,
+                avgPerDart: avgPerDart
+            };
+
+            return {
+                name: name,
+                metric: getMetricValue(metric, playerStats),
+                stats: playerStats,
+                fullStats: playerStats
+            };
+        });
 
         // Sort by metric
         rankings.sort((a, b) => {
@@ -152,11 +278,12 @@ const Stats = (() => {
             return bVal - aVal;
         });
 
-        return rankings;
+        // Add rank numbers
+        return rankings.map((r, i) => ({ ...r, rank: i + 1 }));
     }
 
     /**
-     * Calculate stats for specific games
+     * Calculate stats for specific games (used by time-filtered leaderboards)
      */
     function calculateStatsForGames(gamesArray, playerName) {
         const stats = {
@@ -168,6 +295,9 @@ const Stats = (() => {
             avgPerDart: 0
         };
 
+        let totalTurns = 0;
+        let totalScore = 0;
+
         gamesArray.forEach(game => {
             const player = game.players.find(p => p.name === playerName);
             if (!player) return;
@@ -177,9 +307,11 @@ const Stats = (() => {
                 stats.gamesWon++;
             }
 
-            stats.totalDarts += player.stats.totalDarts;
+            stats.totalDarts += player.stats.totalDarts || 0;
+            totalScore += player.stats.totalScore || 0;
+            totalTurns += player.turns?.length || 0;
 
-            player.turns.forEach(turn => {
+            (player.turns || []).forEach(turn => {
                 const turnTotal = turn.darts.reduce((a, b) => a + b, 0);
                 if (turnTotal === 180) {
                     stats.total180s++;
@@ -187,17 +319,8 @@ const Stats = (() => {
             });
         });
 
-        // Calculate average per turn (not per dart)
-        const totalTurns = gamesArray.reduce((sum, game) => {
-            const player = game.players.find(p => p.name === playerName);
-            return sum + (player?.turns.length || 0);
-        }, 0);
-
+        // Calculate average per turn
         if (totalTurns > 0) {
-            const totalScore = gamesArray.reduce((sum, game) => {
-                const player = game.players.find(p => p.name === playerName);
-                return sum + (player?.stats.totalScore || 0);
-            }, 0);
             stats.avgPerDart = (totalScore / totalTurns).toFixed(2);
         }
 
@@ -230,13 +353,13 @@ const Stats = (() => {
     function getMetricValue(metric, stats) {
         switch (metric) {
             case 'wins':
-                return stats.gamesWon;
+                return stats.gamesWon || stats.total_games_won || 0;
             case 'win-rate':
-                return stats.winRate;
+                return parseFloat(stats.winRate || stats.win_rate || 0);
             case 'avg-dart':
-                return stats.avgPerDart;
+                return parseFloat(stats.avgPerDart || stats.avg_per_dart || 0);
             case '180s':
-                return stats.total180s;
+                return stats.total180s || stats.total_180s || 0;
             default:
                 return 0;
         }
@@ -244,35 +367,39 @@ const Stats = (() => {
 
     /**
      * Get quick stats overview for home page
+     * OPTIMIZED: Simple COUNT queries instead of loading all data
      */
     async function getQuickStats() {
-        const allGames = await Storage.getGames();
-        const games = allGames.filter(g => g.completed_at);
-        const players = await Storage.getPlayers();
+        // Parallel queries for maximum speed
+        const [gamesResult, playersResult, topPlayerResult] = await Promise.all([
+            // Total completed games
+            getSupabaseClient()
+                .from('games')
+                .select('*', { count: 'exact', head: true })
+                .not('completed_at', 'is', null),
 
-        if (games.length === 0) {
-            return {
-                totalGames: 0,
-                totalPlayers: 0,
-                topPlayer: null,
-                highestAvg: 0
-            };
-        }
+            // Total players with at least one game
+            getSupabaseClient()
+                .from('players')
+                .select('*', { count: 'exact', head: true })
+                .gt('total_games_played', 0),
 
-        const playerStats = [];
-        for (const playerName of Object.keys(players)) {
-            const stats = await calculatePlayerStats(playerName);
-            playerStats.push({ name: playerName, ...stats });
-        }
-
-        // Sort by average per 3 darts (already calculated correctly in calculatePlayerStats)
-        playerStats.sort((a, b) => parseFloat(b.avgPerDart) - parseFloat(a.avgPerDart));
+            // Top player by average per dart
+            getSupabaseClient()
+                .from('player_leaderboard')
+                .select('name, avg_per_dart, rank_by_avg')
+                .order('rank_by_avg', { ascending: true })
+                .limit(1)
+                .single()
+        ]);
 
         return {
-            totalGames: games.length,
-            totalPlayers: Object.keys(players).length,
-            topPlayer: playerStats[0]?.name || null,
-            highestAvg: playerStats[0]?.avgPerDart || '0'
+            totalGames: gamesResult.count || 0,
+            totalPlayers: playersResult.count || 0,
+            topPlayer: topPlayerResult.data?.name || null,
+            highestAvg: topPlayerResult.data?.avg_per_dart
+                ? parseFloat(topPlayerResult.data.avg_per_dart).toFixed(2)
+                : '0.00'
         };
     }
 
@@ -298,35 +425,87 @@ const Stats = (() => {
      * Get comparison between two players
      */
     async function comparePlayerStats(playerName1, playerName2) {
-        const stats1 = await calculatePlayerStats(playerName1);
-        const stats2 = await calculatePlayerStats(playerName2);
+        const [stats1, stats2, headToHead] = await Promise.all([
+            calculatePlayerStats(playerName1),
+            calculatePlayerStats(playerName2),
+            getHeadToHeadRecord(playerName1, playerName2)
+        ]);
 
         return {
             player1: { name: playerName1, ...stats1 },
             player2: { name: playerName2, ...stats2 },
-            headToHeadRecord: await getHeadToHeadRecord(playerName1, playerName2)
+            headToHeadRecord: headToHead
         };
     }
 
     /**
      * Get head to head record between two players
+     * OPTIMIZED: Uses junction table query
      */
     async function getHeadToHeadRecord(playerName1, playerName2) {
-        const allGames = await Storage.getGames();
-        const games = allGames.filter(g => g.completed_at);
+        // Get player IDs
+        const { data: players } = await getSupabaseClient()
+            .from('players')
+            .select('id, name')
+            .in('name', [playerName1, playerName2]);
+
+        if (!players || players.length !== 2) {
+            return { wins: 0, losses: 0, total: 0 };
+        }
+
+        const player1Id = players.find(p => p.name === playerName1)?.id;
+        const player2Id = players.find(p => p.name === playerName2)?.id;
+
+        // Query games where BOTH players participated
+        const { data: games } = await getSupabaseClient()
+            .from('games')
+            .select(`
+                id,
+                completed_at,
+                game_players!inner(
+                    player_id,
+                    is_winner
+                )
+            `)
+            .not('completed_at', 'is', null);
+
         let wins1 = 0, wins2 = 0;
 
-        games.forEach(game => {
-            const player1 = game.players.find(p => p.name === playerName1);
-            const player2 = game.players.find(p => p.name === playerName2);
+        (games || []).forEach(game => {
+            const player1Data = game.game_players.find(gp => gp.player_id === player1Id);
+            const player2Data = game.game_players.find(gp => gp.player_id === player2Id);
 
-            if (player1 && player2) {
-                if (player1.winner) wins1++;
-                else if (player2.winner) wins2++;
+            // Only count games where both players participated
+            if (player1Data && player2Data) {
+                if (player1Data.is_winner) wins1++;
+                else if (player2Data.is_winner) wins2++;
             }
         });
 
         return { wins: wins1, losses: wins2, total: wins1 + wins2 };
+    }
+
+    /**
+     * Get empty stats object
+     */
+    function getEmptyStats() {
+        return {
+            gamesPlayed: 0,
+            gamesWon: 0,
+            winRate: '0.0',
+            totalDarts: 0,
+            totalScore: 0,
+            avgPerDart: '0.00',
+            avgPerTurn: '0.00',
+            maxDart: 0,
+            maxTurn: 0,
+            total180s: 0,
+            total140plus: 0,
+            bestCheckout: 0,
+            checkoutPercentage: '0.0',
+            headToHead: {},
+            recentGames: []
+        };
     }
 
     // Public API

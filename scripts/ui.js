@@ -117,30 +117,16 @@ const UI = (() => {
             // Also render stats widget
             await renderStatsWidget();
 
-            const allGames = await Storage.getGames();
-            console.log('Total games loaded:', allGames.length);
-
-            // Debug: Log all games
-            allGames.forEach(g => {
-                const totalTurns = g.players.reduce((sum, p) => sum + p.turns.length, 0);
-                console.log(`Game ${g.id.substring(0, 8)}: is_active=${g.is_active}, completed_at=${g.completed_at}, turns=${totalTurns}`);
+            // OPTIMIZED: Use pagination to load only what we need
+            // Get interrupted games (active, not completed)
+            const { games: interruptedGames } = await Storage.getGamesPaginated(1, 10, {
+                completed: false
             });
 
-            // Separate interrupted and completed games
-            // Only show games that have at least 1 turn played
-            const interruptedGames = allGames.filter(g => {
-                const totalTurns = g.players.reduce((sum, p) => sum + p.turns.length, 0);
-                const isInterrupted = g.is_active && !g.completed_at && totalTurns > 0;
-                if (isInterrupted) {
-                    console.log('Interrupted game found:', g.id, 'with', totalTurns, 'total turns');
-                }
-                return isInterrupted;
+            // Get 5 most recent completed games
+            const { games: completedGames } = await Storage.getGamesPaginated(1, 5, {
+                completed: true
             });
-            // Get only 5 most recent completed games (already ordered by database as newest first)
-            const completedGames = allGames.filter(g => g.completed_at).slice(0, 5);
-
-            console.log('Interrupted games:', interruptedGames.length);
-            console.log('Completed games:', completedGames.length);
 
             if (interruptedGames.length === 0 && completedGames.length === 0) {
                 container.innerHTML = '<p class="placeholder">No games yet. Start your first game!</p>';
@@ -251,47 +237,15 @@ const UI = (() => {
 
     /**
      * Render quick stats on home page
+     * OPTIMIZED: Uses Stats.getQuickStats() which queries database directly
      */
     async function renderQuickStats() {
         const stats = await Stats.getQuickStats();
 
-        const games = await Storage.getGames();
-        const playerGames = games.length > 0 ? games.filter(g => g.completed_at) : [];
-
-        let totalGames = 0;
-        let totalWins = 0;
-        let totalDarts = 0;
-        let totalScore = 0;
-        let total180s = 0;
-
-        if (playerGames.length > 0) {
-            playerGames.forEach(game => {
-                totalGames++;
-                game.players.forEach(player => {
-                    if (player.winner) totalWins++;
-                    totalDarts += player.stats.totalDarts;
-                    totalScore += player.stats.totalScore;
-                    player.turns.forEach(turn => {
-                        if (turn.darts.reduce((a, b) => a + b, 0) === 180) {
-                            total180s++;
-                        }
-                    });
-                });
-            });
-        }
-
-        // Calculate average per turn (not per dart)
-        const totalTurns = games.reduce((sum, g) => {
-            const activePlayers = g.players.filter(p => !p.winner || (p.winner && p.currentScore === 0));
-            return sum + activePlayers.reduce((pSum, p) => pSum + p.turns.length, 0);
-        }, 0);
-        const avgPerDart = totalTurns > 0 ? (totalScore / totalTurns).toFixed(2) : '—';
-        const winRate = totalGames > 0 ? ((totalWins / totalGames) * 100).toFixed(1) : '—';
-
-        document.getElementById('stat-games').textContent = totalGames;
-        document.getElementById('stat-win-rate').textContent = typeof winRate === 'number' ? `${winRate}%` : winRate;
-        document.getElementById('stat-avg-dart').textContent = avgPerDart;
-        document.getElementById('stat-180s').textContent = total180s;
+        document.getElementById('stat-games').textContent = stats.totalGames || '0';
+        document.getElementById('stat-players').textContent = stats.totalPlayers || '0';
+        document.getElementById('stat-top-player').textContent = stats.topPlayer || '—';
+        document.getElementById('stat-avg').textContent = stats.highestAvg || '0.00';
     }
 
     /**
@@ -552,50 +506,44 @@ const UI = (() => {
         currentPage: 1,
         gamesPerPage: 6,
         totalPages: 1,
-        filteredGames: [],
+        totalGames: 0,
         filter: '',
         sortOrder: 'newest'
     };
 
     /**
      * Render game history list with pagination
+     * OPTIMIZED: Uses database-level pagination instead of client-side
      */
     async function renderGameHistory(filter = '', sortOrder = 'newest', page = 1) {
         const container = document.getElementById('games-history-list');
-        let games = (await Storage.getGames()).filter(g => g.completed_at);
 
-        if (filter) {
-            games = games.filter(g =>
-                g.players.some(p => p.name.toLowerCase().includes(filter.toLowerCase()))
-            );
-        }
-
-        if (sortOrder === 'oldest') {
-            games.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-        } else {
-            games.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        }
+        // OPTIMIZED: Database-level pagination and filtering
+        const { games: paginatedGames, pagination } = await Storage.getGamesPaginated(
+            page,
+            paginationState.gamesPerPage,
+            {
+                completed: true,
+                playerName: filter || undefined,
+                sortOrder: sortOrder
+            }
+        );
 
         // Update pagination state
-        paginationState.filteredGames = games;
         paginationState.filter = filter;
         paginationState.sortOrder = sortOrder;
-        paginationState.currentPage = page;
-        paginationState.totalPages = Math.ceil(games.length / paginationState.gamesPerPage);
+        paginationState.currentPage = pagination.page;
+        paginationState.totalPages = pagination.totalPages;
+        paginationState.totalGames = pagination.total;
 
         // Show/hide pagination controls
         const paginationControls = document.getElementById('pagination-controls');
-        if (games.length === 0) {
+        if (pagination.total === 0) {
             container.innerHTML = '<p class="placeholder">No games found</p>';
             if (paginationControls) paginationControls.style.display = 'none';
             document.getElementById('history-games-count').textContent = 'Total: 0 games';
             return;
         }
-
-        // Calculate pagination
-        const startIdx = (page - 1) * paginationState.gamesPerPage;
-        const endIdx = startIdx + paginationState.gamesPerPage;
-        const paginatedGames = games.slice(startIdx, endIdx);
 
         // Render games for current page
         container.innerHTML = paginatedGames.map(game => {
@@ -632,14 +580,14 @@ const UI = (() => {
         updatePaginationControls();
 
         // Update games count
-        document.getElementById('history-games-count').textContent = `Total: ${games.length} games`;
+        document.getElementById('history-games-count').textContent = `Total: ${pagination.total} games`;
     }
 
     /**
      * Update pagination UI controls
      */
     function updatePaginationControls() {
-        const { currentPage, totalPages, gamesPerPage, filteredGames } = paginationState;
+        const { currentPage, totalPages, gamesPerPage, totalGames } = paginationState;
         const paginationControls = document.getElementById('pagination-controls');
         const paginationInfo = document.getElementById('pagination-info-text');
         const paginationPrev = document.getElementById('pagination-prev');
@@ -658,8 +606,8 @@ const UI = (() => {
 
         // Update info text
         const startIdx = (currentPage - 1) * gamesPerPage + 1;
-        const endIdx = Math.min(currentPage * gamesPerPage, filteredGames.length);
-        paginationInfo.textContent = `Showing ${startIdx}-${endIdx} of ${filteredGames.length} (Page ${currentPage} of ${totalPages})`;
+        const endIdx = Math.min(currentPage * gamesPerPage, totalGames || 0);
+        paginationInfo.textContent = `Showing ${startIdx}-${endIdx} of ${totalGames || 0} (Page ${currentPage} of ${totalPages})`;
 
         // Update prev/next buttons
         paginationPrev.disabled = currentPage === 1;

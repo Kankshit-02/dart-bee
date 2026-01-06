@@ -1,6 +1,6 @@
 /**
- * Storage Module - Supabase Backend
- * Replaces LocalStorage with Supabase for live sync and sharing
+ * Storage Module - Supabase Backend with Normalized Schema
+ * Updated for normalized database structure (games, players, game_players, turns)
  */
 
 const Storage = (() => {
@@ -13,9 +13,15 @@ const Storage = (() => {
     function ensureInitialized() {
         if (!supabase) {
             if (!SupabaseClient.isConnected()) {
-                throw new Error('Supabase client not connected');
+                console.error('Supabase client not connected - attempting to initialize');
+                SupabaseClient.init();
             }
-            supabase = SupabaseClient.getClient();
+            try {
+                supabase = SupabaseClient.getClient();
+            } catch (error) {
+                console.error('Failed to get Supabase client:', error);
+                throw error;
+            }
         }
         return supabase;
     }
@@ -26,10 +32,13 @@ const Storage = (() => {
     async function init() {
         try {
             if (initialized) {
+                console.log('Storage already initialized');
                 return true;
             }
 
-            ensureInitialized();
+            console.log('Initializing Storage...');
+            supabase = ensureInitialized();
+            console.log('Supabase client obtained:', !!supabase);
 
             // Test connection
             const { error } = await supabase
@@ -44,7 +53,8 @@ const Storage = (() => {
             }
 
             initialized = true;
-            console.log('✓ Storage initialized successfully');
+            console.log('✓ Storage initialized successfully (normalized schema)');
+            console.log('✓ Storage.sb available:', !!supabase);
             return true;
         } catch (error) {
             console.error('Storage initialization error:', error);
@@ -53,17 +63,36 @@ const Storage = (() => {
     }
 
     /**
-     * Get all games (ordered by creation date, newest first)
+     * Get all games with player data (ordered by creation date, newest first)
+     * NOTE: For large datasets, use getGamesPaginated() instead
      */
     async function getGames(limit = null) {
         try {
             const sb = ensureInitialized();
             let query = sb
                 .from('games')
-                .select('*')
+                .select(`
+                    *,
+                    winner:players!winner_id(id, name),
+                    game_players(
+                        id,
+                        player_order,
+                        starting_score,
+                        final_score,
+                        is_winner,
+                        finish_rank,
+                        finish_round,
+                        total_turns,
+                        total_darts,
+                        total_score,
+                        max_dart,
+                        max_turn,
+                        avg_per_turn,
+                        player:players(id, name)
+                    )
+                `)
                 .order('created_at', { ascending: false });
 
-            // Apply limit at database level for efficiency
             if (limit !== null && limit > 0) {
                 query = query.limit(limit);
             }
@@ -75,7 +104,8 @@ const Storage = (() => {
                 throw error;
             }
 
-            return data || [];
+            // Transform to match old format for backward compatibility
+            return (data || []).map(transformGameFromDB);
         } catch (error) {
             console.error('getGames error:', error);
             return [];
@@ -83,29 +113,269 @@ const Storage = (() => {
     }
 
     /**
-     * Save a new game
+     * Get games with pagination (recommended for large datasets)
+     */
+    async function getGamesPaginated(page = 1, perPage = 20, filters = {}) {
+        try {
+            const sb = ensureInitialized();
+            const offset = (page - 1) * perPage;
+
+            let query = sb
+                .from('games')
+                .select(`
+                    *,
+                    winner:players!winner_id(id, name),
+                    game_players(
+                        id,
+                        player_order,
+                        starting_score,
+                        final_score,
+                        is_winner,
+                        finish_rank,
+                        finish_round,
+                        total_turns,
+                        total_darts,
+                        total_score,
+                        avg_per_turn,
+                        player:players(id, name)
+                    )
+                `, { count: 'exact' });
+
+            // Apply sort order
+            const sortOrder = filters.sortOrder || 'newest';
+            query = query.order('created_at', { ascending: sortOrder === 'oldest' });
+
+            // Apply filters
+            if (filters.completed !== undefined) {
+                if (filters.completed) {
+                    query = query.not('completed_at', 'is', null);
+                } else {
+                    query = query.is('completed_at', null);
+                }
+            }
+
+            if (filters.active !== undefined) {
+                query = query.eq('is_active', filters.active);
+            }
+
+            if (filters.deviceId) {
+                query = query.eq('device_id', filters.deviceId);
+            }
+
+            // Player name filter - need to query through junction table
+            if (filters.playerName) {
+                // Get player ID first
+                const { data: playerData } = await sb
+                    .from('players')
+                    .select('id')
+                    .ilike('name', `%${filters.playerName}%`)
+                    .limit(10);
+
+                if (playerData && playerData.length > 0) {
+                    const playerIds = playerData.map(p => p.id);
+                    // Filter games that have these players
+                    query = query.in('game_players.player_id', playerIds);
+                } else {
+                    // No matching players, return empty result
+                    return {
+                        games: [],
+                        pagination: { page: 1, perPage, total: 0, totalPages: 0, hasNext: false, hasPrev: false }
+                    };
+                }
+            }
+
+            const { data, count, error } = await query.range(offset, offset + perPage - 1);
+
+            if (error) {
+                console.error('Error fetching paginated games:', error);
+                throw error;
+            }
+
+            return {
+                games: (data || []).map(transformGameFromDB),
+                pagination: {
+                    page,
+                    perPage,
+                    total: count || 0,
+                    totalPages: Math.ceil((count || 0) / perPage),
+                    hasNext: offset + perPage < (count || 0),
+                    hasPrev: page > 1
+                }
+            };
+        } catch (error) {
+            console.error('getGamesPaginated error:', error);
+            return {
+                games: [],
+                pagination: { page: 1, perPage, total: 0, totalPages: 0, hasNext: false, hasPrev: false }
+            };
+        }
+    }
+
+    /**
+     * Transform game from new DB format to old format for compatibility
+     */
+    function transformGameFromDB(dbGame) {
+        // Reconstruct players array from game_players
+        const players = (dbGame.game_players || [])
+            .sort((a, b) => a.player_order - b.player_order)
+            .map(gp => ({
+                id: gp.id,
+                name: gp.player?.name || 'Unknown',
+                startingScore: gp.starting_score,
+                currentScore: gp.final_score,
+                winner: gp.is_winner,
+                finish_rank: gp.finish_rank,
+                finish_round: gp.finish_round,
+                turns: [], // Turns not loaded by default for performance
+                stats: {
+                    totalDarts: gp.total_darts,
+                    totalScore: gp.total_score,
+                    avgPerDart: gp.avg_per_turn, // Note: this is actually avg per turn now
+                    maxTurn: gp.max_turn,
+                    maxDart: gp.max_dart,
+                    checkoutAttempts: 0, // Not readily available
+                    checkoutSuccess: 0
+                }
+            }));
+
+        return {
+            id: dbGame.id,
+            created_at: dbGame.created_at,
+            completed_at: dbGame.completed_at,
+            game_type: dbGame.game_type,
+            win_condition: dbGame.win_condition,
+            scoring_mode: dbGame.scoring_mode,
+            current_player_index: 0, // Not stored in new schema
+            current_turn: dbGame.current_turn,
+            is_active: dbGame.is_active,
+            device_id: dbGame.device_id,
+            players: players
+        };
+    }
+
+    /**
+     * Save a new game with multi-table insert
      */
     async function saveGame(game) {
         try {
             const sb = ensureInitialized();
-            const { data, error } = await sb
-                .from('games')
-                .insert([game])
-                .select();
 
-            if (error) {
-                console.error('Error saving game:', error);
-                throw error;
+            // Step 1: Get/create player IDs
+            const playerIds = [];
+            for (const player of game.players) {
+                const playerData = await getOrCreatePlayer(player.name);
+                playerIds.push(playerData.id);
             }
 
-            // Update player profiles
-            await updatePlayersFromGame(game);
+            // Step 2: Insert game metadata
+            const { data: gameData, error: gameError } = await sb
+                .from('games')
+                .insert([{
+                    id: game.id,
+                    created_at: game.created_at,
+                    game_type: game.game_type,
+                    win_condition: game.win_condition,
+                    scoring_mode: game.scoring_mode,
+                    is_active: game.is_active,
+                    current_turn: game.current_turn,
+                    device_id: game.device_id,
+                    total_players: game.players.length
+                }])
+                .select();
 
-            return data ? data[0] : game;
+            if (gameError) {
+                console.error('Error inserting game:', gameError);
+                throw gameError;
+            }
+
+            // Step 3: Insert game_players
+            const gamePlayersData = game.players.map((p, i) => ({
+                game_id: game.id,
+                player_id: playerIds[i],
+                player_order: i,
+                starting_score: p.startingScore,
+                final_score: p.currentScore,
+                is_winner: p.winner || false,
+                finish_rank: p.finish_rank,
+                finish_round: p.finish_round,
+                total_turns: p.turns.length,
+                total_darts: p.stats.totalDarts,
+                total_score: p.stats.totalScore,
+                max_dart: p.stats.maxDart,
+                max_turn: p.stats.maxTurn,
+                count_180s: countScoresInTurns(p.turns, 180),
+                count_140_plus: countScoresInRange(p.turns, 140, 179),
+                checkout_attempts: p.stats.checkoutAttempts || 0,
+                checkout_successes: p.stats.checkoutSuccess || 0
+            }));
+
+            const { data: gpData, error: gpError } = await sb
+                .from('game_players')
+                .insert(gamePlayersData)
+                .select();
+
+            if (gpError) {
+                console.error('Error inserting game_players:', gpError);
+                throw gpError;
+            }
+
+            // Step 4: Insert turns (if any)
+            const turnsData = [];
+            game.players.forEach((p, pIdx) => {
+                const gamePlayerId = gpData[pIdx].id;
+                p.turns.forEach((turn, tIdx) => {
+                    turnsData.push({
+                        game_player_id: gamePlayerId,
+                        turn_number: tIdx + 1,
+                        round_number: Math.floor(tIdx / game.players.length),
+                        dart_scores: turn.darts,
+                        score_before: tIdx === 0 ? p.startingScore : (p.turns[tIdx - 1]?.remaining || p.startingScore),
+                        score_after: turn.remaining,
+                        turn_total: turn.darts.reduce((a, b) => a + b, 0),
+                        is_busted: turn.busted || false,
+                        is_checkout_attempt: turn.remaining === 0 || turn.remaining < 0,
+                        is_successful_checkout: turn.remaining === 0 && !turn.busted,
+                        created_at: turn.timestamp ? new Date(turn.timestamp).toISOString() : new Date().toISOString()
+                    });
+                });
+            });
+
+            if (turnsData.length > 0) {
+                const { error: turnsError } = await sb
+                    .from('turns')
+                    .insert(turnsData);
+
+                if (turnsError) {
+                    console.error('Error inserting turns:', turnsError);
+                    // Don't throw - game is saved, just turns failed
+                }
+            }
+
+            console.log(`✓ Game saved: ${game.players.length} players, ${turnsData.length} turns`);
+            return gameData ? gameData[0] : game;
         } catch (error) {
             console.error('saveGame error:', error);
             throw error;
         }
+    }
+
+    /**
+     * Helper: Count turns with specific total score
+     */
+    function countScoresInTurns(turns, targetScore) {
+        return turns.filter(turn =>
+            turn.darts.reduce((a, b) => a + b, 0) === targetScore
+        ).length;
+    }
+
+    /**
+     * Helper: Count turns with scores in range
+     */
+    function countScoresInRange(turns, min, max) {
+        return turns.filter(turn => {
+            const total = turn.darts.reduce((a, b) => a + b, 0);
+            return total >= min && total <= max;
+        }).length;
     }
 
     /**
@@ -114,9 +384,35 @@ const Storage = (() => {
     async function updateGame(gameId, updates) {
         try {
             const sb = ensureInitialized();
+
+            // For now, only update game metadata
+            // Full game state updates (players, turns) not supported in normalized schema
+            const gameUpdates = {
+                completed_at: updates.completed_at,
+                is_active: updates.is_active,
+                current_turn: updates.current_turn,
+                updated_at: new Date().toISOString()
+            };
+
+            // Set winner_id if completed
+            if (updates.completed_at && updates.players) {
+                const winner = updates.players.find(p => p.winner);
+                if (winner) {
+                    const { data: playerData } = await sb
+                        .from('players')
+                        .select('id')
+                        .eq('name', winner.name)
+                        .single();
+
+                    if (playerData) {
+                        gameUpdates.winner_id = playerData.id;
+                    }
+                }
+            }
+
             const { data, error } = await sb
                 .from('games')
-                .update(updates)
+                .update(gameUpdates)
                 .eq('id', gameId)
                 .select();
 
@@ -125,10 +421,87 @@ const Storage = (() => {
                 throw error;
             }
 
+            // If game has player/turn updates, update those tables too
+            if (updates.players) {
+                await updateGamePlayers(gameId, updates.players);
+            }
+
             return data ? data[0] : null;
         } catch (error) {
             console.error('updateGame error:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Update game_players and turns for an active game
+     */
+    async function updateGamePlayers(gameId, players) {
+        try {
+            const sb = ensureInitialized();
+
+            // Get existing game_players
+            const { data: existingGP } = await sb
+                .from('game_players')
+                .select('id, player:players(name)')
+                .eq('game_id', gameId);
+
+            if (!existingGP) return;
+
+            // Update each player's stats
+            for (const player of players) {
+                const gp = existingGP.find(g => g.player.name === player.name);
+                if (!gp) continue;
+
+                // Update game_players stats
+                await sb
+                    .from('game_players')
+                    .update({
+                        final_score: player.currentScore,
+                        is_winner: player.winner || false,
+                        finish_rank: player.finish_rank,
+                        finish_round: player.finish_round,
+                        total_turns: player.turns.length,
+                        total_darts: player.stats.totalDarts,
+                        total_score: player.stats.totalScore,
+                        max_dart: player.stats.maxDart,
+                        max_turn: player.stats.maxTurn,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', gp.id);
+
+                // Insert new turns (check for turns not yet in DB)
+                const { data: existingTurns } = await sb
+                    .from('turns')
+                    .select('turn_number')
+                    .eq('game_player_id', gp.id);
+
+                const existingTurnNumbers = new Set((existingTurns || []).map(t => t.turn_number));
+
+                const newTurns = player.turns
+                    .map((turn, idx) => ({ turn, number: idx + 1 }))
+                    .filter(({ number }) => !existingTurnNumbers.has(number))
+                    .map(({ turn, number }) => ({
+                        game_player_id: gp.id,
+                        turn_number: number,
+                        round_number: Math.floor((number - 1) / players.length),
+                        dart_scores: turn.darts,
+                        score_before: number === 1 ? player.startingScore : (player.turns[number - 2]?.remaining || player.startingScore),
+                        score_after: turn.remaining,
+                        turn_total: turn.darts.reduce((a, b) => a + b, 0),
+                        is_busted: turn.busted || false,
+                        is_checkout_attempt: turn.remaining === 0 || turn.remaining < 0,
+                        is_successful_checkout: turn.remaining === 0 && !turn.busted,
+                        created_at: turn.timestamp ? new Date(turn.timestamp).toISOString() : new Date().toISOString()
+                    }));
+
+                if (newTurns.length > 0) {
+                    await sb.from('turns').insert(newTurns);
+                }
+            }
+        } catch (error) {
+            console.error('updateGamePlayers error:', error);
+            // Don't throw - allow game update to succeed even if player update fails
         }
     }
 
@@ -140,7 +513,33 @@ const Storage = (() => {
             const sb = ensureInitialized();
             const { data, error } = await sb
                 .from('games')
-                .select('*')
+                .select(`
+                    *,
+                    winner:players!winner_id(id, name),
+                    game_players(
+                        id,
+                        player_order,
+                        starting_score,
+                        final_score,
+                        is_winner,
+                        finish_rank,
+                        finish_round,
+                        total_turns,
+                        total_darts,
+                        total_score,
+                        max_dart,
+                        max_turn,
+                        avg_per_turn,
+                        player:players(id, name),
+                        turns(
+                            turn_number,
+                            dart_scores,
+                            score_after,
+                            is_busted,
+                            created_at
+                        )
+                    )
+                `)
                 .eq('id', gameId)
                 .single();
 
@@ -149,7 +548,8 @@ const Storage = (() => {
                 throw error;
             }
 
-            return data;
+            // Transform with full turn history
+            return transformGameWithTurns(data);
         } catch (error) {
             console.error('getGame error:', error);
             return null;
@@ -157,11 +557,64 @@ const Storage = (() => {
     }
 
     /**
-     * Delete a game
+     * Transform game with full turn history
+     */
+    function transformGameWithTurns(dbGame) {
+        const players = (dbGame.game_players || [])
+            .sort((a, b) => a.player_order - b.player_order)
+            .map(gp => {
+                const turns = (gp.turns || [])
+                    .sort((a, b) => a.turn_number - b.turn_number)
+                    .map(t => ({
+                        darts: t.dart_scores,
+                        remaining: t.score_after,
+                        busted: t.is_busted,
+                        timestamp: new Date(t.created_at).getTime()
+                    }));
+
+                return {
+                    id: gp.id,
+                    name: gp.player?.name || 'Unknown',
+                    startingScore: gp.starting_score,
+                    currentScore: gp.final_score,
+                    winner: gp.is_winner,
+                    finish_rank: gp.finish_rank,
+                    finish_round: gp.finish_round,
+                    turns: turns,
+                    stats: {
+                        totalDarts: gp.total_darts,
+                        totalScore: gp.total_score,
+                        avgPerDart: gp.avg_per_turn,
+                        maxTurn: gp.max_turn,
+                        maxDart: gp.max_dart,
+                        checkoutAttempts: 0,
+                        checkoutSuccess: 0
+                    }
+                };
+            });
+
+        return {
+            id: dbGame.id,
+            created_at: dbGame.created_at,
+            completed_at: dbGame.completed_at,
+            game_type: dbGame.game_type,
+            win_condition: dbGame.win_condition,
+            scoring_mode: dbGame.scoring_mode,
+            current_player_index: 0,
+            current_turn: dbGame.current_turn,
+            is_active: dbGame.is_active,
+            device_id: dbGame.device_id,
+            players: players
+        };
+    }
+
+    /**
+     * Delete a game (CASCADE will delete game_players and turns)
      */
     async function deleteGame(gameId) {
         try {
-            const { error } = await supabase
+            const sb = ensureInitialized();
+            const { error } = await sb
                 .from('games')
                 .delete()
                 .eq('id', gameId);
@@ -171,6 +624,7 @@ const Storage = (() => {
                 throw error;
             }
 
+            console.log('✓ Game deleted (cascaded to game_players and turns)');
             return true;
         } catch (error) {
             console.error('deleteGame error:', error);
@@ -195,7 +649,7 @@ const Storage = (() => {
                 throw error;
             }
 
-            // Convert array to object with name as key (for compatibility with existing code)
+            // Convert array to object with name as key (for compatibility)
             const playersObj = {};
             (data || []).forEach(player => {
                 playersObj[player.name] = player;
@@ -230,20 +684,8 @@ const Storage = (() => {
             const newPlayer = {
                 id: generateUUID(),
                 name: playerName,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                aggregate_stats: {
-                    gamesPlayed: 0,
-                    gamesWon: 0,
-                    totalDarts: 0,
-                    total180s: 0,
-                    total140plus: 0,
-                    totalCheckoutAttempts: 0,
-                    totalCheckoutSuccess: 0,
-                    bestCheckout: 0,
-                    maxDart: 0,
-                    totalScore: 0
-                }
+                created_at: new Date().toISOString()
+                // Aggregate stats will be 0 by default (database defaults)
             };
 
             const { data: created, error: insertError } = await sb
@@ -259,138 +701,65 @@ const Storage = (() => {
             return created ? created[0] : newPlayer;
         } catch (error) {
             console.error('getOrCreatePlayer error:', error);
-            // Return a temporary player object if creation fails
-            return {
-                name: playerName,
-                aggregate_stats: {
-                    gamesPlayed: 0,
-                    gamesWon: 0,
-                    totalDarts: 0,
-                    total180s: 0,
-                    total140plus: 0,
-                    totalCheckoutAttempts: 0,
-                    totalCheckoutSuccess: 0,
-                    bestCheckout: 0,
-                    maxDart: 0,
-                    totalScore: 0
-                }
-            };
+            return { id: generateUUID(), name: playerName };
         }
     }
 
     /**
-     * Get all games for a specific player
+     * Get all games for a specific player (optimized with junction table)
      */
-    async function getPlayerGames(playerName) {
+    async function getPlayerGames(playerName, limit = 50) {
         try {
             const sb = ensureInitialized();
-            const { data, error } = await sb
-                .from('games')
-                .select('*')
-                .filter('players', 'cs', `[{"name":"${playerName}"}]`)
-                .order('created_at', { ascending: false });
 
-            if (error) {
-                // Fallback: fetch all games and filter client-side
-                const allGames = await getGames();
-                return allGames.filter(game =>
-                    game.players.some(p => p.name === playerName)
-                );
+            // First, get player ID
+            const { data: playerData } = await sb
+                .from('players')
+                .select('id')
+                .eq('name', playerName)
+                .single();
+
+            if (!playerData) {
+                return [];
             }
 
-            return data || [];
+            // Query via game_players junction table
+            const { data, error } = await sb
+                .from('game_players')
+                .select(`
+                    game:games(
+                        *,
+                        winner:players!winner_id(id, name),
+                        game_players(
+                            id,
+                            player_order,
+                            starting_score,
+                            final_score,
+                            is_winner,
+                            finish_rank,
+                            total_turns,
+                            total_darts,
+                            total_score,
+                            avg_per_turn,
+                            player:players(id, name)
+                        )
+                    )
+                `)
+                .eq('player_id', playerData.id)
+                .order('created_at', { ascending: false, foreignTable: 'games' })
+                .limit(limit);
+
+            if (error) {
+                console.error('Error fetching player games:', error);
+                throw error;
+            }
+
+            return (data || [])
+                .filter(gp => gp.game) // Filter out nulls
+                .map(gp => transformGameFromDB(gp.game));
         } catch (error) {
             console.error('getPlayerGames error:', error);
             return [];
-        }
-    }
-
-    /**
-     * Update player aggregate stats from a completed game
-     */
-    async function updatePlayersFromGame(game) {
-        try {
-            const sb = ensureInitialized();
-            const updates = {};
-
-            // Calculate stats for each player
-            game.players.forEach(player => {
-                const playerName = player.name;
-
-                updates[playerName] = {
-                    gamesPlayed: 1,
-                    gamesWon: player.winner ? 1 : 0,
-                    totalDarts: player.stats.totalDarts,
-                    total180s: 0,
-                    total140plus: 0,
-                    totalCheckoutAttempts: player.stats.checkoutAttempts,
-                    totalCheckoutSuccess: player.stats.checkoutSuccess,
-                    bestCheckout: player.stats.checkoutSuccess > 0 ? player.stats.checkoutSuccess : 0,
-                    maxDart: player.stats.maxDart,
-                    totalScore: player.stats.totalScore
-                };
-
-                // Count 180s and 140+
-                player.turns.forEach(turn => {
-                    const turnTotal = turn.darts.reduce((a, b) => a + b, 0);
-                    if (turnTotal === 180) {
-                        updates[playerName].total180s++;
-                    } else if (turnTotal >= 140) {
-                        updates[playerName].total140plus++;
-                    }
-                });
-            });
-
-            // Update or create player profiles
-            for (const [playerName, stats] of Object.entries(updates)) {
-                try {
-                    // Try to fetch existing player
-                    const { data: existing } = await sb
-                        .from('players')
-                        .select('aggregate_stats')
-                        .eq('name', playerName)
-                        .single();
-
-                    if (existing) {
-                        // Aggregate the stats
-                        const current = existing.aggregate_stats;
-                        const aggregated = {
-                            gamesPlayed: (current.gamesPlayed || 0) + stats.gamesPlayed,
-                            gamesWon: (current.gamesWon || 0) + stats.gamesWon,
-                            totalDarts: (current.totalDarts || 0) + stats.totalDarts,
-                            total180s: (current.total180s || 0) + stats.total180s,
-                            total140plus: (current.total140plus || 0) + stats.total140plus,
-                            totalCheckoutAttempts: (current.totalCheckoutAttempts || 0) + stats.totalCheckoutAttempts,
-                            totalCheckoutSuccess: (current.totalCheckoutSuccess || 0) + stats.totalCheckoutSuccess,
-                            bestCheckout: Math.max(current.bestCheckout || 0, stats.bestCheckout),
-                            maxDart: Math.max(current.maxDart || 0, stats.maxDart),
-                            totalScore: (current.totalScore || 0) + stats.totalScore
-                        };
-
-                        await sb
-                            .from('players')
-                            .update({ aggregate_stats: aggregated, updated_at: new Date().toISOString() })
-                            .eq('name', playerName);
-                    } else {
-                        // Create new player
-                        await sb
-                            .from('players')
-                            .insert([{
-                                id: generateUUID(),
-                                name: playerName,
-                                aggregate_stats: stats,
-                                created_at: new Date().toISOString(),
-                                updated_at: new Date().toISOString()
-                            }]);
-                    }
-                } catch (error) {
-                    console.error(`Error updating player ${playerName}:`, error);
-                    // Continue with next player
-                }
-            }
-        } catch (error) {
-            console.error('updatePlayersFromGame error:', error);
-            // Don't throw - game was already saved, just stats update failed
         }
     }
 
@@ -403,7 +772,7 @@ const Storage = (() => {
             const players = await getPlayers();
 
             return {
-                version: '1.0.0',
+                version: '2.0.0', // Updated version for normalized schema
                 exportDate: new Date().toISOString(),
                 games: games,
                 players: players
@@ -428,7 +797,31 @@ const Storage = (() => {
     // Public API
     return {
         init,
+        get sb() {
+            console.log('Storage.sb getter called, supabase =', !!supabase);
+            if (supabase) {
+                return supabase;
+            }
+            try {
+                const client = ensureInitialized();
+                console.log('ensureInitialized returned:', !!client);
+                return client;
+            } catch (error) {
+                console.error('Storage.sb getter error:', error);
+                // Try one more time to initialize
+                try {
+                    SupabaseClient.init();
+                    const client = SupabaseClient.getClient();
+                    supabase = client; // Cache it
+                    return client;
+                } catch (retryError) {
+                    console.error('Retry failed:', retryError);
+                    return null;
+                }
+            }
+        }, // Expose Supabase client
         getGames,
+        getGamesPaginated, // NEW: Pagination support
         saveGame,
         updateGame,
         getGame,
@@ -436,18 +829,9 @@ const Storage = (() => {
         getPlayers,
         getOrCreatePlayer,
         getPlayerGames,
-        updatePlayersFromGame,
         exportData,
         generateUUID
     };
 })();
 
-// Initialize storage when Supabase client is ready
-document.addEventListener('DOMContentLoaded', async () => {
-    // Wait for Supabase to initialize
-    setTimeout(async () => {
-        if (SupabaseClient.isConnected()) {
-            await Storage.init();
-        }
-    }, 500);
-});
+// Storage initialization is now handled by app.js to ensure proper sequencing

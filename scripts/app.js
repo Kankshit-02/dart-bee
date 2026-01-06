@@ -713,6 +713,32 @@ const App = (() => {
 
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', async () => {
+    console.log('🚀 APP.JS VERSION 2.0 - NORMALIZED SCHEMA');
+
+    // Ensure Storage is initialized before anything else
+    try {
+        console.log('Starting Storage initialization...');
+        await Storage.init();
+
+        // Wait for Storage.sb to be available (with timeout)
+        let attempts = 0;
+        while (!Storage.sb && attempts < 10) {
+            console.log('Waiting for Storage.sb to be ready...', attempts);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+        }
+
+        if (!Storage.sb) {
+            throw new Error('Storage.sb not available after initialization');
+        }
+
+        console.log('Storage ready, initializing app...');
+    } catch (error) {
+        console.error('Failed to initialize Storage:', error);
+        UI.showToast('Failed to connect to database. Please refresh the page.', 'error');
+        return;
+    }
+
     // Initialize app event listeners
     App.init();
 

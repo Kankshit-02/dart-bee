@@ -153,7 +153,7 @@ const Spectator = (() => {
                     <div class="player-score-stats">
                         <div>Turns: ${player.turns.length}</div>
                         <div>Darts: ${stats.totalDarts}</div>
-                        <div>Avg: ${stats.totalDarts > 0 ? stats.avgPerDart.toFixed(1) : '—'}</div>
+                        <div>Avg: ${player.turns.length > 0 ? (stats.totalScore / player.turns.length).toFixed(1) : '—'}</div>
                     </div>
                 </div>
             `;

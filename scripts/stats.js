@@ -78,10 +78,15 @@ const Stats = (() => {
             }
         });
 
-        // Calculate averages (both per 3 darts/per turn)
-        if (stats.totalDarts > 0) {
-            stats.avgPerDart = (stats.totalScore / stats.totalDarts * 3).toFixed(2);
-            stats.avgPerTurn = (stats.totalScore / stats.totalDarts * 3).toFixed(2);
+        // Calculate averages per turn (not per dart)
+        const totalTurns = games.reduce((sum, game) => {
+            const player = game.players.find(p => p.name === playerName);
+            return sum + (player?.turns.length || 0);
+        }, 0);
+
+        if (totalTurns > 0) {
+            stats.avgPerDart = (stats.totalScore / totalTurns).toFixed(2);
+            stats.avgPerTurn = (stats.totalScore / totalTurns).toFixed(2);
         }
 
         if (stats.gamesPlayed > 0) {
@@ -182,13 +187,18 @@ const Stats = (() => {
             });
         });
 
-        if (stats.totalDarts > 0) {
+        // Calculate average per turn (not per dart)
+        const totalTurns = gamesArray.reduce((sum, game) => {
+            const player = game.players.find(p => p.name === playerName);
+            return sum + (player?.turns.length || 0);
+        }, 0);
+
+        if (totalTurns > 0) {
             const totalScore = gamesArray.reduce((sum, game) => {
                 const player = game.players.find(p => p.name === playerName);
                 return sum + (player?.stats.totalScore || 0);
             }, 0);
-            // Calculate average per 3 darts (per turn)
-            stats.avgPerDart = (totalScore / stats.totalDarts * 3).toFixed(2);
+            stats.avgPerDart = (totalScore / totalTurns).toFixed(2);
         }
 
         if (stats.gamesPlayed > 0) {
@@ -255,6 +265,7 @@ const Stats = (() => {
             playerStats.push({ name: playerName, ...stats });
         }
 
+        // Sort by average per 3 darts (already calculated correctly in calculatePlayerStats)
         playerStats.sort((a, b) => parseFloat(b.avgPerDart) - parseFloat(a.avgPerDart));
 
         return {

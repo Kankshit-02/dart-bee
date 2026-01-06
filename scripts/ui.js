@@ -280,8 +280,12 @@ const UI = (() => {
             });
         }
 
-        // Calculate average per 3 darts (per turn) instead of per individual dart
-        const avgPerDart = totalDarts > 0 ? ((totalScore / totalDarts) * 3).toFixed(2) : '—';
+        // Calculate average per turn (not per dart)
+        const totalTurns = games.reduce((sum, g) => {
+            const activePlayers = g.players.filter(p => !p.winner || (p.winner && p.currentScore === 0));
+            return sum + activePlayers.reduce((pSum, p) => pSum + p.turns.length, 0);
+        }, 0);
+        const avgPerDart = totalTurns > 0 ? (totalScore / totalTurns).toFixed(2) : '—';
         const winRate = totalGames > 0 ? ((totalWins / totalGames) * 100).toFixed(1) : '—';
 
         document.getElementById('stat-games').textContent = totalGames;
@@ -431,7 +435,7 @@ const UI = (() => {
                     <div class="player-score-stats">
                         <div>Turns: ${player.turns.length}</div>
                         <div>Darts: ${stats.totalDarts}</div>
-                        <div>Avg: ${stats.totalDarts > 0 ? stats.avgPerDart.toFixed(1) : '—'}</div>
+                        <div>Avg: ${player.turns.length > 0 ? (stats.totalScore / player.turns.length).toFixed(1) : '—'}</div>
                     </div>
                 </div>
             `;
@@ -1100,7 +1104,7 @@ const UI = (() => {
                         </div>
                         <div style="text-align: right; font-size: 12px; color: var(--color-text-light);">
                             <div style="font-weight: 600; color: var(--color-primary);">${player.turns.length} turns</div>
-                            <div>${stats.totalDarts} darts • Avg: ${stats.totalDarts > 0 ? stats.avgPerDart.toFixed(1) : '—'}</div>
+                            <div>${stats.totalDarts} darts • Avg: ${player.turns.length > 0 ? (stats.totalScore / player.turns.length).toFixed(1) : '—'}</div>
                         </div>
                     </div>
                 `;

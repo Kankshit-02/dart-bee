@@ -157,9 +157,9 @@ const Game = (() => {
             currentPlayer.stats.totalScore += totalScore;
             currentPlayer.stats.maxTurn = Math.max(currentPlayer.stats.maxTurn, totalScore);
             currentPlayer.stats.maxDart = Math.max(currentPlayer.stats.maxDart, Math.max(...darts));
-            // Calculate average per 3 darts (per turn) instead of per individual dart
+            // Calculate average per turn (not per dart)
             currentPlayer.stats.avgPerDart =
-                (currentPlayer.stats.totalScore / currentPlayer.stats.totalDarts) * 3;
+                currentPlayer.stats.totalScore / currentPlayer.turns.length;
         } else {
             currentPlayer.turns.push(turn);
         }
@@ -291,9 +291,9 @@ const Game = (() => {
             }
         });
 
-        if (currentPlayer.stats.totalDarts > 0) {
-            // Calculate average per 3 darts (per turn)
-            currentPlayer.stats.avgPerDart = (currentPlayer.stats.totalScore / currentPlayer.stats.totalDarts) * 3;
+        if (currentPlayer.turns.length > 0) {
+            // Calculate average per turn (not per dart)
+            currentPlayer.stats.avgPerDart = currentPlayer.stats.totalScore / currentPlayer.turns.length;
         }
 
         return { success: true, player: currentPlayer.name, score: currentPlayer.currentScore };
@@ -354,7 +354,7 @@ const Game = (() => {
                 winner: p.winner,
                 score: p.currentScore,
                 darts: p.stats.totalDarts,
-                avgPerDart: p.stats.totalDarts > 0 ? ((p.stats.totalScore / p.stats.totalDarts) * 3).toFixed(2) : '0',
+                avgPerDart: p.turns.length > 0 ? (p.stats.totalScore / p.turns.length).toFixed(2) : '0',
                 turns: p.turns.length
             })),
             duration: completedTime ? ((completedTime - createdTime) / 1000 / 60).toFixed(1) : null
@@ -470,8 +470,8 @@ const Game = (() => {
                 rank: p.finish_rank,
                 score: p.currentScore,
                 darts: p.stats.totalDarts,
-                // Calculate average per 3 darts (per turn)
-                avgPerDart: p.stats.totalDarts > 0 ? ((p.stats.totalScore / p.stats.totalDarts) * 3).toFixed(2) : 0
+                // Calculate average per turn (not per dart)
+                avgPerDart: p.turns.length > 0 ? (p.stats.totalScore / p.turns.length).toFixed(2) : 0
             }))
             .sort((a, b) => (a.rank || 999) - (b.rank || 999));
     }

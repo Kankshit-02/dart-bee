@@ -54,6 +54,12 @@ const Game = (() => {
             });
         }
 
+        // Randomize player order (Fisher-Yates shuffle)
+        for (let i = game.players.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [game.players[i], game.players[j]] = [game.players[j], game.players[i]];
+        }
+
         return game;
     }
 
@@ -151,8 +157,9 @@ const Game = (() => {
             currentPlayer.stats.totalScore += totalScore;
             currentPlayer.stats.maxTurn = Math.max(currentPlayer.stats.maxTurn, totalScore);
             currentPlayer.stats.maxDart = Math.max(currentPlayer.stats.maxDart, Math.max(...darts));
+            // Calculate average per 3 darts (per turn) instead of per individual dart
             currentPlayer.stats.avgPerDart =
-                currentPlayer.stats.totalScore / currentPlayer.stats.totalDarts;
+                (currentPlayer.stats.totalScore / currentPlayer.stats.totalDarts) * 3;
         } else {
             currentPlayer.turns.push(turn);
         }
@@ -161,7 +168,9 @@ const Game = (() => {
         if (currentPlayer.currentScore === 0) {
             // Mark player as finished (but don't rank yet - wait for round end)
             currentPlayer.winner = true;
-            currentPlayer.finish_turn = game.current_turn; // Track which turn they finished
+            // Track which round they finished (round = complete cycle through all players)
+            // This ensures players finishing in the same round get the same rank
+            currentPlayer.finish_round = Math.floor(game.current_turn / game.players.length);
 
             // Find next active player (not finished)
             let nextActiveIndex = -1;
@@ -198,7 +207,7 @@ const Game = (() => {
                 // DEBUG: Log player finish ranks before final ranking
                 console.log('Before getRankings - player finish_ranks:');
                 game.players.forEach((p, idx) => {
-                    console.log(`  Player ${idx} (${p.name}): finish_turn=${p.finish_turn}, finish_rank=${p.finish_rank}`);
+                    console.log(`  Player ${idx} (${p.name}): finish_round=${p.finish_round}, finish_rank=${p.finish_rank}`);
                 });
 
                 endGame(game);
@@ -221,15 +230,15 @@ const Game = (() => {
                 game.current_player_index = nextActiveIndex;
             }
 
-            // Calculate rank for this player based on finish turn
-            const finishRank = calculateCurrentRank(game, currentPlayer.finish_turn);
+            // Calculate rank for this player based on finish round
+            const finishRank = calculateCurrentRank(game, currentPlayer.finish_round);
 
             return {
                 success: true,
                 gameEnded: false,
                 playerFinished: currentPlayer.name,
                 finishRank: finishRank,
-                finishTurn: currentPlayer.finish_turn,
+                finishRound: currentPlayer.finish_round,
                 nextPlayer: game.players[game.current_player_index].name,
                 allRankings: getRankings(game)
             };
@@ -283,7 +292,8 @@ const Game = (() => {
         });
 
         if (currentPlayer.stats.totalDarts > 0) {
-            currentPlayer.stats.avgPerDart = currentPlayer.stats.totalScore / currentPlayer.stats.totalDarts;
+            // Calculate average per 3 darts (per turn)
+            currentPlayer.stats.avgPerDart = (currentPlayer.stats.totalScore / currentPlayer.stats.totalDarts) * 3;
         }
 
         return { success: true, player: currentPlayer.name, score: currentPlayer.currentScore };
@@ -344,7 +354,7 @@ const Game = (() => {
                 winner: p.winner,
                 score: p.currentScore,
                 darts: p.stats.totalDarts,
-                avgPerDart: p.stats.avgPerDart.toFixed(2),
+                avgPerDart: p.stats.totalDarts > 0 ? ((p.stats.totalScore / p.stats.totalDarts) * 3).toFixed(2) : '0',
                 turns: p.turns.length
             })),
             duration: completedTime ? ((completedTime - createdTime) / 1000 / 60).toFixed(1) : null
@@ -388,40 +398,40 @@ const Game = (() => {
      * Get the next finish rank (counting finished players)
      */
     /**
-     * Assign rankings based on finish turn
-     * Players finishing in same turn get same rank
+     * Assign rankings based on finish round
+     * Players finishing in same round get same rank
      * Last player (who didn't finish) gets last rank
      */
     function assignRankingsByFinishTurn(game) {
-        // Get all finished players with their finish turns
+        // Get all finished players with their finish rounds
         const finishedPlayers = game.players
-            .filter(p => p.finish_turn !== undefined)
+            .filter(p => p.finish_round !== undefined)
             .map(p => ({
                 player: p,
-                finishTurn: p.finish_turn
+                finishRound: p.finish_round
             }));
 
-        // Sort by finish turn (ascending)
-        finishedPlayers.sort((a, b) => a.finishTurn - b.finishTurn);
+        // Sort by finish round (ascending)
+        finishedPlayers.sort((a, b) => a.finishRound - b.finishRound);
 
         // Assign ranks
         let currentRank = 1;
-        let lastFinishTurn = -1;
+        let lastFinishRound = -1;
         let playersAtCurrentRank = 0;
 
-        for (const { player, finishTurn } of finishedPlayers) {
-            if (finishTurn !== lastFinishTurn) {
-                // New finish turn, move to next rank(s)
+        for (const { player, finishRound } of finishedPlayers) {
+            if (finishRound !== lastFinishRound) {
+                // New finish round, move to next rank(s)
                 currentRank += playersAtCurrentRank;
                 playersAtCurrentRank = 0;
-                lastFinishTurn = finishTurn;
+                lastFinishRound = finishRound;
             }
             player.finish_rank = currentRank;
             playersAtCurrentRank++;
         }
 
         // Assign rank to any unfinished players (they get the last rank)
-        const unfinishedPlayers = game.players.filter(p => p.finish_turn === undefined);
+        const unfinishedPlayers = game.players.filter(p => p.finish_round === undefined);
         if (unfinishedPlayers.length > 0) {
             const lastRank = game.players.length - unfinishedPlayers.length + 1;
             unfinishedPlayers.forEach(p => {
@@ -436,18 +446,18 @@ const Game = (() => {
     }
 
     /**
-     * Calculate the current rank of a player based on their finish_turn
+     * Calculate the current rank of a player based on their finish_round
      */
-    function calculateCurrentRank(game, playerFinishTurn) {
+    function calculateCurrentRank(game, playerFinishRound) {
         const finishedPlayers = game.players
-            .filter(p => p.finish_turn !== undefined && p.finish_turn < playerFinishTurn)
-            .map(p => p.finish_turn);
+            .filter(p => p.finish_round !== undefined && p.finish_round < playerFinishRound)
+            .map(p => p.finish_round);
 
-        // Get unique finish turns that came before this player
-        const uniqueEarlierTurns = [...new Set(finishedPlayers)].sort((a, b) => a - b);
+        // Get unique finish rounds that came before this player
+        const uniqueEarlierRounds = [...new Set(finishedPlayers)].sort((a, b) => a - b);
 
-        // Rank is 1 + number of unique earlier finish turns
-        return uniqueEarlierTurns.length + 1;
+        // Rank is 1 + number of unique earlier finish rounds
+        return uniqueEarlierRounds.length + 1;
     }
 
     /**
@@ -460,7 +470,8 @@ const Game = (() => {
                 rank: p.finish_rank,
                 score: p.currentScore,
                 darts: p.stats.totalDarts,
-                avgPerDart: p.stats.totalDarts > 0 ? (p.stats.totalScore / p.stats.totalDarts).toFixed(2) : 0
+                // Calculate average per 3 darts (per turn)
+                avgPerDart: p.stats.totalDarts > 0 ? ((p.stats.totalScore / p.stats.totalDarts) * 3).toFixed(2) : 0
             }))
             .sort((a, b) => (a.rank || 999) - (b.rank || 999));
     }

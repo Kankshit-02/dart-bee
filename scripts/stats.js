@@ -78,9 +78,9 @@ const Stats = (() => {
             }
         });
 
-        // Calculate averages
+        // Calculate averages (both per 3 darts/per turn)
         if (stats.totalDarts > 0) {
-            stats.avgPerDart = (stats.totalScore / stats.totalDarts).toFixed(2);
+            stats.avgPerDart = (stats.totalScore / stats.totalDarts * 3).toFixed(2);
             stats.avgPerTurn = (stats.totalScore / stats.totalDarts * 3).toFixed(2);
         }
 
@@ -187,7 +187,8 @@ const Stats = (() => {
                 const player = game.players.find(p => p.name === playerName);
                 return sum + (player?.stats.totalScore || 0);
             }, 0);
-            stats.avgPerDart = (totalScore / stats.totalDarts).toFixed(2);
+            // Calculate average per 3 darts (per turn)
+            stats.avgPerDart = (totalScore / stats.totalDarts * 3).toFixed(2);
         }
 
         if (stats.gamesPlayed > 0) {

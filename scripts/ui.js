@@ -280,7 +280,8 @@ const UI = (() => {
             });
         }
 
-        const avgPerDart = totalDarts > 0 ? (totalScore / totalDarts).toFixed(2) : '—';
+        // Calculate average per 3 darts (per turn) instead of per individual dart
+        const avgPerDart = totalDarts > 0 ? ((totalScore / totalDarts) * 3).toFixed(2) : '—';
         const winRate = totalGames > 0 ? ((totalWins / totalGames) * 100).toFixed(1) : '—';
 
         document.getElementById('stat-games').textContent = totalGames;

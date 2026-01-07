@@ -395,8 +395,25 @@ const Storage = (() => {
             };
 
             // Set winner_id if completed
+            // Winner is the player with finish_rank = 1 (first to finish)
+            // NOT just any player with winner: true (multiple can reach 0 in darts)
             if (updates.completed_at && updates.players) {
-                const winner = updates.players.find(p => p.winner);
+                // First try to find player with finish_rank = 1
+                let winner = updates.players.find(p => p.finish_rank === 1);
+
+                // Fallback: if no finish_rank, find first player with winner: true
+                if (!winner) {
+                    winner = updates.players.find(p => p.winner);
+                }
+
+                // Last fallback: player with lowest score
+                if (!winner) {
+                    const sorted = [...updates.players].sort((a, b) =>
+                        (a.currentScore || a.score || 0) - (b.currentScore || b.score || 0)
+                    );
+                    winner = sorted[0];
+                }
+
                 if (winner) {
                     const { data: playerData } = await sb
                         .from('players')
@@ -454,11 +471,15 @@ const Storage = (() => {
                 if (!gp) continue;
 
                 // Update game_players stats
+                // is_winner should be true only for the actual winner (finish_rank = 1)
+                // NOT for everyone who reached 0 (player.winner)
+                const isActualWinner = player.finish_rank === 1;
+
                 await sb
                     .from('game_players')
                     .update({
                         final_score: player.currentScore,
-                        is_winner: player.winner || false,
+                        is_winner: isActualWinner,
                         finish_rank: player.finish_rank,
                         finish_round: player.finish_round,
                         total_turns: player.turns.length,

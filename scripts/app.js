@@ -765,3 +765,4 @@ window.addEventListener('beforeunload', async (e) => {
         e.returnValue = '';
     }
 });
+// v2.1 update

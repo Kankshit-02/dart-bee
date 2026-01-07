@@ -305,13 +305,48 @@ const Game = (() => {
         game.is_active = false;
         game.completed_at = new Date().toISOString();
 
-        // Ensure winner is marked
-        const winner = game.players.find(p => p.winner);
-        if (!winner) {
-            // If no winner (game abandoned), mark player with lowest score as winner
+        // Assign finish_rank if not already assigned
+        // This handles manual "End Game" where rankings weren't set during play
+        const hasRankings = game.players.some(p => p.finish_rank !== undefined);
+
+        if (!hasRankings) {
+            // Sort players: first by whether they finished (score=0), then by score, then by darts
+            const sortedPlayers = [...game.players].sort((a, b) => {
+                // Players who reached 0 come first
+                const aFinished = a.currentScore === 0;
+                const bFinished = b.currentScore === 0;
+                if (aFinished && !bFinished) return -1;
+                if (!aFinished && bFinished) return 1;
+
+                // If both finished or both didn't, sort by score (lower is better)
+                if (a.currentScore !== b.currentScore) {
+                    return a.currentScore - b.currentScore;
+                }
+
+                // Tie-breaker: fewer darts is better
+                return (a.stats?.totalDarts || 0) - (b.stats?.totalDarts || 0);
+            });
+
+            // Assign ranks
+            sortedPlayers.forEach((player, index) => {
+                player.finish_rank = index + 1;
+            });
+        }
+
+        // Ensure winner is marked (player with finish_rank = 1)
+        const winner = game.players.find(p => p.finish_rank === 1);
+        if (winner) {
+            winner.winner = true;
+            // Clear winner flag from others
+            game.players.forEach(p => {
+                if (p !== winner) p.winner = false;
+            });
+        } else {
+            // Fallback: if no finish_rank, use lowest score
             const sortedPlayers = [...game.players].sort((a, b) => a.currentScore - b.currentScore);
             if (sortedPlayers[0]) {
                 sortedPlayers[0].winner = true;
+                sortedPlayers[0].finish_rank = 1;
             }
         }
 

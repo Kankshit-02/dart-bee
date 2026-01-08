@@ -476,6 +476,17 @@ const UI = (() => {
      */
     function renderCurrentPlayer(game) {
         const player = Game.getCurrentPlayer(game);
+
+        // Handle completed games or invalid player index
+        if (!player) {
+            const winner = game.players.find(p => p.winner);
+            document.getElementById('current-player-name').textContent = winner
+                ? `${winner.name} Wins!`
+                : 'Game Complete';
+            document.getElementById('game-title').textContent = `${game.game_type} - Finished`;
+            return;
+        }
+
         document.getElementById('current-player-name').textContent = `${player.name}'s Turn`;
         document.getElementById('game-title').textContent = `${game.game_type} - Turn ${game.current_turn + 1}`;
     }

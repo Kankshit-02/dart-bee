@@ -835,7 +835,7 @@ const UI = (() => {
         const metricLabel = {
             'wins': 'Wins',
             'win-rate': 'Win Rate',
-            'avg-dart': 'Avg/Turn',
+            'avg-dart': 'Avg/Dart',
             'max-turn': 'Top Turn'
         }[metric] || 'Wins';
 
@@ -862,7 +862,7 @@ const UI = (() => {
                     metricDisplay = `${entry.stats.winRate}%`;
                     break;
                 case 'avg-dart':
-                    metricDisplay = entry.stats.avgPerTurn || entry.stats.avgPerDart;
+                    metricDisplay = entry.stats.avgPerDart || '0.00';
                     break;
                 case 'max-turn':
                     metricDisplay = entry.stats.maxTurn || entry.fullStats?.maxTurn || 0;

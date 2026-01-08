@@ -250,8 +250,8 @@ const Stats = (() => {
             const winRate = stats.gamesPlayed > 0
                 ? (stats.gamesWon / stats.gamesPlayed * 100).toFixed(1)
                 : '0.0';
-            const avgPerDart = stats.totalTurns > 0
-                ? (stats.totalScore / stats.totalTurns).toFixed(2)
+            const avgPerDart = stats.totalDarts > 0
+                ? (stats.totalScore / stats.totalDarts).toFixed(2)
                 : '0.00';
 
             const playerStats = {
@@ -319,9 +319,9 @@ const Stats = (() => {
             });
         });
 
-        // Calculate average per turn
-        if (totalTurns > 0) {
-            stats.avgPerDart = (totalScore / totalTurns).toFixed(2);
+        // Calculate average per dart
+        if (stats.totalDarts > 0) {
+            stats.avgPerDart = (totalScore / stats.totalDarts).toFixed(2);
         }
 
         if (stats.gamesPlayed > 0) {

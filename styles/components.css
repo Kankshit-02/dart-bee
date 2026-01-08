@@ -88,17 +88,36 @@
     align-items: center;
     gap: var(--spacing-sm);
     padding: var(--spacing-lg) var(--spacing-md);
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid var(--color-border);
-    border-radius: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(251, 245, 255, 0.9) 100%);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(125, 95, 146, 0.1);
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(125, 95, 146, 0.08);
     transition: all var(--transition-base);
     text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #facf39 0%, #7d5f92 50%, #38a2ff 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.stat-card:hover::before {
+    opacity: 1;
 }
 
 .stat-card:hover {
-    transform: none;
-    box-shadow: none;
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(125, 95, 146, 0.15);
     border-color: var(--color-primary);
 }
 

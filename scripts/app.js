@@ -174,6 +174,9 @@ const App = (() => {
                     case 'leaderboard':
                         Router.navigate('leaderboard');
                         break;
+                    case 'stats':
+                        Router.navigate('stats');
+                        break;
                 }
             });
         });

@@ -333,14 +333,25 @@ const UI = (() => {
                 // Handle input for suggestions
                 input.addEventListener('input', (e) => {
                     const value = e.target.value.toLowerCase().trim();
+
+                    // Validate for duplicates whenever input changes
+                    validatePlayerNames();
+
                     if (value.length === 0) {
                         suggestionsList.style.display = 'none';
                         return;
                     }
 
-                    // Filter existing players matching the input
+                    // Get all currently selected player names (excluding this input)
+                    const selectedNames = Array.from(playerNamesContainer.querySelectorAll('.player-name-input'))
+                        .filter(inp => inp !== input)
+                        .map(inp => inp.value.toLowerCase().trim())
+                        .filter(name => name !== '');
+
+                    // Filter existing players matching the input, excluding already selected ones
                     const matches = existingPlayers.filter(player =>
-                        player.toLowerCase().includes(value)
+                        player.toLowerCase().includes(value) &&
+                        !selectedNames.includes(player.toLowerCase())
                     );
 
                     if (matches.length === 0) {
@@ -361,6 +372,7 @@ const UI = (() => {
                         item.addEventListener('click', () => {
                             input.value = item.getAttribute('data-player');
                             suggestionsList.style.display = 'none';
+                            validatePlayerNames();
                         });
                     });
                 });
@@ -370,6 +382,7 @@ const UI = (() => {
                     setTimeout(() => {
                         suggestionsList.style.display = 'none';
                     }, 200);
+                    validatePlayerNames();
                 });
 
                 input.addEventListener('focus', () => {
@@ -382,6 +395,54 @@ const UI = (() => {
                 wrapper.appendChild(input);
                 wrapper.appendChild(suggestionsList);
                 playerNamesContainer.appendChild(wrapper);
+            }
+        }
+
+        // Validate player names for duplicates and enable/disable submit button
+        function validatePlayerNames() {
+            const submitButton = document.querySelector('#new-game-form button[type="submit"]');
+            if (!submitButton) return;
+
+            const playerInputs = Array.from(playerNamesContainer.querySelectorAll('.player-name-input'));
+            const enteredNames = playerInputs
+                .map(input => input.value.trim())
+                .filter(name => name !== '');
+
+            // Check for duplicates (case-insensitive)
+            const normalizedNames = enteredNames.map(name => name.toLowerCase());
+            const hasDuplicates = normalizedNames.length !== new Set(normalizedNames).size;
+
+            // Clear previous error styling
+            playerInputs.forEach(input => {
+                input.style.borderColor = '';
+            });
+
+            if (hasDuplicates) {
+                // Find and highlight duplicates
+                const nameCounts = {};
+                playerInputs.forEach(input => {
+                    const name = input.value.trim().toLowerCase();
+                    if (name !== '') {
+                        nameCounts[name] = (nameCounts[name] || 0) + 1;
+                    }
+                });
+
+                playerInputs.forEach(input => {
+                    const name = input.value.trim().toLowerCase();
+                    if (name !== '' && nameCounts[name] > 1) {
+                        input.style.borderColor = '#f44336';
+                    }
+                });
+
+                submitButton.disabled = true;
+                submitButton.style.opacity = '0.5';
+                submitButton.style.cursor = 'not-allowed';
+                submitButton.title = 'Remove duplicate player names to continue';
+            } else {
+                submitButton.disabled = false;
+                submitButton.style.opacity = '';
+                submitButton.style.cursor = '';
+                submitButton.title = '';
             }
         }
 

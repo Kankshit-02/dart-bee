@@ -468,8 +468,9 @@ const Game = (() => {
         });
 
         // Get all finished players with their finish rounds
+        // Use != null to catch both null and undefined
         const finishedPlayers = game.players
-            .filter(p => p.finish_round !== undefined)
+            .filter(p => p.finish_round != null)
             .map(p => ({
                 player: p,
                 finishRound: p.finish_round
@@ -499,7 +500,8 @@ const Game = (() => {
         }
 
         // Assign rank to any unfinished players (they get the last rank)
-        const unfinishedPlayers = game.players.filter(p => p.finish_round === undefined);
+        // Use == null to catch both null and undefined
+        const unfinishedPlayers = game.players.filter(p => p.finish_round == null);
         console.log('Unfinished players:', unfinishedPlayers.map(p => p.name).join(', ') || 'NONE');
         if (unfinishedPlayers.length > 0) {
             const lastRank = game.players.length - unfinishedPlayers.length + 1;

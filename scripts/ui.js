@@ -298,6 +298,13 @@ const UI = (() => {
 
         function updatePlayerNameInputs() {
             const count = parseInt(playerCountInput.value);
+
+            // Preserve existing values before rebuilding
+            const existingValues = [];
+            playerNamesContainer.querySelectorAll('.player-name-input').forEach(input => {
+                existingValues.push(input.value);
+            });
+
             playerNamesContainer.innerHTML = '';
 
             for (let i = 0; i < count; i++) {
@@ -310,6 +317,11 @@ const UI = (() => {
                 input.placeholder = `Player ${i + 1} (optional)`;
                 input.className = 'player-name-input';
                 input.setAttribute('autocomplete', 'off');
+
+                // Restore previous value if it exists
+                if (i < existingValues.length) {
+                    input.value = existingValues[i];
+                }
 
                 // Autocomplete suggestion list
                 const suggestionsList = document.createElement('div');

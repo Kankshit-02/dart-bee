@@ -897,7 +897,7 @@ const UI = (() => {
         const metricLabel = {
             'wins': 'Wins',
             'win-rate': 'Win Rate',
-            'avg-dart': 'Avg/Dart',
+            'avg-turn': 'Avg/Turn',
             'max-turn': 'Top Turn'
         }[metric] || 'Wins';
 
@@ -923,8 +923,8 @@ const UI = (() => {
                 case 'win-rate':
                     metricDisplay = `${entry.stats.winRate}%`;
                     break;
-                case 'avg-dart':
-                    metricDisplay = entry.stats.avgPerDart || '0.00';
+                case 'avg-turn':
+                    metricDisplay = entry.stats.avgPerTurn || entry.stats.avgPerDart || '0.00';
                     break;
                 case 'max-turn':
                     metricDisplay = entry.stats.maxTurn || entry.fullStats?.maxTurn || 0;
@@ -1030,8 +1030,8 @@ const UI = (() => {
                         <div class="stat-box-value">${stats.winRate}%</div>
                     </div>
                     <div class="stat-box">
-                        <div class="stat-box-label">Avg/Dart</div>
-                        <div class="stat-box-value">${stats.avgPerDart}</div>
+                        <div class="stat-box-label">Avg/Turn</div>
+                        <div class="stat-box-value">${stats.avgPerTurn || stats.avgPerDart}</div>
                     </div>
                 </div>
             </div>
@@ -1528,7 +1528,7 @@ const UI = (() => {
                         <div class="record-icon">📈</div>
                         <div class="record-content">
                             <div class="record-value">${globalStats.records.highestAvg || '0.00'}</div>
-                            <div class="record-label">Best Avg/Dart</div>
+                            <div class="record-label">Best Avg/Turn</div>
                             <div class="record-holder">${globalStats.records.highestAvgPlayer || 'N/A'}</div>
                         </div>
                     </div>

@@ -139,7 +139,7 @@ const Stats = (() => {
         const sortConfig = {
             'wins': { column: 'rank_by_wins', ascending: true },
             'win-rate': { column: 'rank_by_win_rate', ascending: true },
-            'avg-dart': { column: 'rank_by_avg', ascending: true },
+            'avg-turn': { column: 'rank_by_avg', ascending: true },
             'max-turn': { column: 'max_turn_score', ascending: false }  // Sort by value descending
         }[metric] || { column: 'rank_by_wins', ascending: true };
 
@@ -363,8 +363,8 @@ const Stats = (() => {
                 return stats.gamesWon || stats.total_games_won || 0;
             case 'win-rate':
                 return parseFloat(stats.winRate || stats.win_rate || 0);
-            case 'avg-dart':
-                return parseFloat(stats.avgPerDart || stats.avg_per_dart || stats.avgPerTurn || stats.avg_per_turn || 0);
+            case 'avg-turn':
+                return parseFloat(stats.avgPerTurn || stats.avg_per_turn || stats.avgPerDart || stats.avg_per_dart || 0);
             case 'max-turn':
                 return stats.maxTurn || stats.max_turn_score || stats.max_turn || 0;
             default:

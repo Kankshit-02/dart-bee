@@ -163,7 +163,7 @@ const Charts = (() => {
 
     /**
      * Create Performance Over Time Line Chart
-     * Shows avg per dart trend over recent games
+     * Shows avg per turn trend over recent games
      */
     function createPerformanceChart(canvasId, recentGames) {
         destroyChart(canvasId);
@@ -184,14 +184,14 @@ const Charts = (() => {
         // Reverse to show chronological order (oldest first)
         const games = [...recentGames].reverse();
         const labels = games.map((g, i) => `Game ${i + 1}`);
-        const avgPerDart = games.map(g => g.darts > 0 ? (g.score / g.darts).toFixed(2) : 0);
+        const avgPerTurn = games.map(g => g.turns > 0 ? (g.score / g.turns).toFixed(2) : 0);
 
         const options = getDefaultOptions('line');
         options.plugins.legend.display = false;
         options.scales.y.beginAtZero = true;
         options.scales.y.title = {
             display: true,
-            text: 'Avg per Dart',
+            text: 'Avg per Turn',
             font: { family: 'Inter, sans-serif', size: 11 },
             color: COLORS.textLight
         };
@@ -201,8 +201,8 @@ const Charts = (() => {
             data: {
                 labels: labels,
                 datasets: [{
-                    label: 'Avg per Dart',
-                    data: avgPerDart,
+                    label: 'Avg per Turn',
+                    data: avgPerTurn,
                     borderColor: COLORS.primary,
                     backgroundColor: 'rgba(125, 95, 146, 0.1)',
                     fill: true,
@@ -371,7 +371,7 @@ const Charts = (() => {
         const metricLabels = {
             'wins': 'Total Wins',
             'win-rate': 'Win Rate (%)',
-            'avg-dart': 'Avg per Dart',
+            'avg-turn': 'Avg per Turn',
             '180s': 'Total 180s'
         };
 
@@ -433,7 +433,7 @@ const Charts = (() => {
 
         const data = [
             normalizeValue(parseFloat(stats.winRate) || 0, 100),
-            normalizeValue(parseFloat(stats.avgPerDart) || 0, 60),
+            normalizeValue(parseFloat(stats.avgPerTurn || stats.avgPerDart) || 0, 60),
             normalizeValue(stats.total180s || 0, 20),
             normalizeValue(stats.maxTurn || 0, 180),
             normalizeValue(parseFloat(stats.checkoutPercentage) || 0, 100)
@@ -450,10 +450,10 @@ const Charts = (() => {
                     backgroundColor: COLORS.primaryDark,
                     callbacks: {
                         label: function(context) {
-                            const labels = ['Win Rate', 'Avg/Dart', '180s', 'Max Turn', 'Checkout %'];
+                            const labels = ['Win Rate', 'Avg/Turn', '180s', 'Max Turn', 'Checkout %'];
                             const rawValues = [
                                 `${stats.winRate}%`,
-                                stats.avgPerDart,
+                                stats.avgPerTurn || stats.avgPerDart,
                                 stats.total180s,
                                 stats.maxTurn,
                                 `${stats.checkoutPercentage}%`
@@ -487,7 +487,7 @@ const Charts = (() => {
         chartInstances[canvasId] = new Chart(ctx, {
             type: 'radar',
             data: {
-                labels: ['Win Rate', 'Avg/Dart', '180s', 'Max Turn', 'Checkout %'],
+                labels: ['Win Rate', 'Avg/Turn', '180s', 'Max Turn', 'Checkout %'],
                 datasets: [{
                     data: data,
                     backgroundColor: 'rgba(125, 95, 146, 0.2)',

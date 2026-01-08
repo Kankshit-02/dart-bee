@@ -259,8 +259,8 @@ const StatsWidgets = (() => {
                 color: '#38a2ff'
             },
             {
-                label: 'Avg/Dart Goal',
-                value: parseFloat(stats.avgPerDart) || 0,
+                label: 'Avg/Turn Goal',
+                value: parseFloat(stats.avgPerTurn || stats.avgPerDart) || 0,
                 max: goals.targetAvgPerDart,
                 color: '#facf39'
             }
@@ -506,7 +506,7 @@ const StatsWidgets = (() => {
                             <input type="number" id="goal-games" value="${currentPrefs.goals.targetGames}" min="1" max="10000">
                         </label>
                         <label class="setting-input">
-                            <span>Target Avg/Dart</span>
+                            <span>Target Avg/Turn</span>
                             <input type="number" id="goal-avgDart" value="${currentPrefs.goals.targetAvgPerDart}" min="1" max="60">
                         </label>
                     </div>
@@ -589,7 +589,7 @@ const StatsWidgets = (() => {
             { label: 'Games Played', key: 'gamesPlayed', format: v => v },
             { label: 'Wins', key: 'gamesWon', format: v => v },
             { label: 'Win Rate', key: 'winRate', format: v => v + '%' },
-            { label: 'Avg/Dart', key: 'avgPerDart', format: v => v },
+            { label: 'Avg/Turn', key: 'avgPerTurn', format: v => v || stats1.avgPerDart || stats2.avgPerDart },
             { label: 'Total 180s', key: 'total180s', format: v => v },
             { label: 'Max Turn', key: 'maxTurn', format: v => v },
             { label: 'Checkout %', key: 'checkoutPercentage', format: v => v + '%' }
@@ -638,7 +638,7 @@ const StatsWidgets = (() => {
 
         const data1 = [
             normalizeValue(parseFloat(stats1.winRate) || 0, 100),
-            normalizeValue(parseFloat(stats1.avgPerDart) || 0, 60),
+            normalizeValue(parseFloat(stats1.avgPerTurn || stats1.avgPerDart) || 0, 60),
             normalizeValue(stats1.total180s || 0, 20),
             normalizeValue(stats1.maxTurn || 0, 180),
             normalizeValue(parseFloat(stats1.checkoutPercentage) || 0, 100)
@@ -646,7 +646,7 @@ const StatsWidgets = (() => {
 
         const data2 = [
             normalizeValue(parseFloat(stats2.winRate) || 0, 100),
-            normalizeValue(parseFloat(stats2.avgPerDart) || 0, 60),
+            normalizeValue(parseFloat(stats2.avgPerTurn || stats2.avgPerDart) || 0, 60),
             normalizeValue(stats2.total180s || 0, 20),
             normalizeValue(stats2.maxTurn || 0, 180),
             normalizeValue(parseFloat(stats2.checkoutPercentage) || 0, 100)
@@ -655,7 +655,7 @@ const StatsWidgets = (() => {
         const chart = new Chart(ctx, {
             type: 'radar',
             data: {
-                labels: ['Win Rate', 'Avg/Dart', '180s', 'Max Turn', 'Checkout %'],
+                labels: ['Win Rate', 'Avg/Turn', '180s', 'Max Turn', 'Checkout %'],
                 datasets: [
                     {
                         label: name1,

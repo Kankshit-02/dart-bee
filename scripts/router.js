@@ -49,6 +49,10 @@ const Router = (() => {
             return { route: 'new-game' };
         }
 
+        if (pathParts[0] === 'stats') {
+            return { route: 'stats' };
+        }
+
         return { route: 'home' };
     }
 
@@ -82,6 +86,9 @@ const Router = (() => {
                 break;
             case 'player-profile':
                 path = `#/leaderboard/player/${encodeURIComponent(params.playerName)}`;
+                break;
+            case 'stats':
+                path = '#/stats';
                 break;
         }
 

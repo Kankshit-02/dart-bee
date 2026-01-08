@@ -27,8 +27,10 @@
     <!-- Supabase & Configuration -->
     <!-- Load Supabase Client Library -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Chart.js for data visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <!-- Load Configuration (contains API credentials) -->
-    <script src="scripts/config.js?v=20260108.1654"></script>
+    <script src="scripts/config.js?v=20260108.1700"></script>
 </head>
 <body>
     <div id="app" class="app-container">
@@ -54,6 +56,10 @@
                 <button class="nav-link" data-page="leaderboard" aria-label="Leaderboard">
                     <span class="icon">🏆</span>
                     <span class="label">Leaderboard</span>
+                </button>
+                <button class="nav-link" data-page="stats" aria-label="Stats">
+                    <span class="icon">📊</span>
+                    <span class="label">Stats</span>
                 </button>
             </div>
         </nav>
@@ -338,6 +344,56 @@
                 </div>
             </div>
 
+            <!-- Global Stats Page -->
+            <div id="stats-page" class="page">
+                <div class="page-header">
+                    <h1>Global Statistics</h1>
+                    <button class="btn btn-secondary btn-small" id="stats-settings-btn" onclick="StatsWidgets.openSettings()">
+                        ⚙️ Customize
+                    </button>
+                </div>
+
+                <!-- Player Selector for detailed stats -->
+                <div class="stats-player-selector">
+                    <label for="stats-player-select">View stats for:</label>
+                    <select id="stats-player-select" class="form-input">
+                        <option value="">-- Select Player --</option>
+                    </select>
+                    <button class="btn btn-secondary btn-small" id="compare-players-btn">Compare Players</button>
+                </div>
+
+                <!-- Global Stats Summary -->
+                <div id="global-stats-summary" class="global-stats-summary">
+                    <!-- Dynamically generated -->
+                </div>
+
+                <!-- Player-specific widgets (when player selected) -->
+                <div id="player-stats-widgets" class="player-stats-widgets">
+                    <!-- Dynamically generated -->
+                </div>
+
+                <!-- Player Comparison Modal -->
+                <div id="comparison-modal" class="comparison-modal hidden">
+                    <div class="comparison-modal-content">
+                        <button class="modal-close" onclick="UI.closeComparisonModal()">×</button>
+                        <h2>Compare Players</h2>
+                        <div class="comparison-selectors">
+                            <select id="compare-player-1" class="form-input">
+                                <option value="">Select Player 1</option>
+                            </select>
+                            <span class="vs-text">VS</span>
+                            <select id="compare-player-2" class="form-input">
+                                <option value="">Select Player 2</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="run-comparison-btn">Compare</button>
+                        <div id="comparison-result" class="comparison-result">
+                            <!-- Dynamically generated -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Player Profile Page -->
             <div id="player-profile-page" class="page hidden">
                 <div class="page-header">
@@ -371,20 +427,24 @@
 
     <!-- Scripts (load in specific order) -->
     <!-- 1. Device manager (must load first) -->
-    <script src="scripts/device.js?v=20260108.1654"></script>
+    <script src="scripts/device.js?v=20260108.1700"></script>
     <!-- 2. Supabase client initialization (must load before storage) -->
-    <script src="scripts/supabase-client.js?v=20260108.1654"></script>
+    <script src="scripts/supabase-client.js?v=20260108.1700"></script>
     <!-- 3. Storage layer (uses Supabase) -->
-    <script src="scripts/storage.js?v=20260108.1654"></script>
+    <script src="scripts/storage.js?v=20260108.1700"></script>
     <!-- 4. Game logic -->
-    <script src="scripts/game.js?v=20260108.1654"></script>
+    <script src="scripts/game.js?v=20260108.1700"></script>
     <!-- 5. Statistics -->
-    <script src="scripts/stats.js?v=20260108.1654"></script>
-    <!-- 6. Router for URL-based navigation -->
-    <script src="scripts/router.js?v=20260108.1654"></script>
-    <!-- 7. UI rendering -->
-    <script src="scripts/ui.js?v=20260108.1654"></script>
-    <!-- 8. Main app logic -->
-    <script src="scripts/app.js?v=20260108.1654"></script>
+    <script src="scripts/stats.js?v=20260108.1700"></script>
+    <!-- 6. Charts module -->
+    <script src="scripts/charts.js?v=20260108.1700"></script>
+    <!-- 7. Stats Widgets module -->
+    <script src="scripts/statsWidgets.js?v=20260108.1700"></script>
+    <!-- 8. Router for URL-based navigation -->
+    <script src="scripts/router.js?v=20260108.1700"></script>
+    <!-- 9. UI rendering -->
+    <script src="scripts/ui.js?v=20260108.1700"></script>
+    <!-- 10. Main app logic -->
+    <script src="scripts/app.js?v=20260108.1700"></script>
 </body>
 </html>

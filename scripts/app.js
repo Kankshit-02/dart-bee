@@ -39,6 +39,7 @@ const App = (() => {
         setupGameEvents();
         setupHistoryEvents();
         setupLeaderboardEvents();
+        setupStatsEvents();
         setupModalEvents();
     }
 
@@ -76,6 +77,10 @@ const App = (() => {
 
                 case 'player-profile':
                     await App.viewPlayerProfile(routeInfo.playerName);
+                    break;
+
+                case 'stats':
+                    await loadStats();
                     break;
 
                 default:
@@ -396,6 +401,52 @@ const App = (() => {
         });
 
         await UI.renderLeaderboard(metric, filter);
+    }
+
+    /**
+     * Load stats page
+     */
+    async function loadStats() {
+        UI.showPage('stats-page');
+        await UI.renderStatsPage();
+    }
+
+    /**
+     * Setup stats page events
+     */
+    function setupStatsEvents() {
+        // Player selector change
+        const playerSelect = document.getElementById('stats-player-select');
+        if (playerSelect) {
+            playerSelect.addEventListener('change', async (e) => {
+                const playerName = e.target.value;
+                await UI.renderPlayerStatsWidgets(playerName);
+            });
+        }
+
+        // Compare players button
+        const compareBtn = document.getElementById('compare-players-btn');
+        if (compareBtn) {
+            compareBtn.addEventListener('click', () => {
+                UI.openComparisonModal();
+            });
+        }
+
+        // Run comparison button
+        const runCompareBtn = document.getElementById('run-comparison-btn');
+        if (runCompareBtn) {
+            runCompareBtn.addEventListener('click', () => {
+                UI.runPlayerComparison();
+            });
+        }
+
+        // Listen for preferences changes
+        document.addEventListener('statsPreferencesChanged', async (e) => {
+            const playerSelect = document.getElementById('stats-player-select');
+            if (playerSelect && playerSelect.value) {
+                await UI.renderPlayerStatsWidgets(playerSelect.value);
+            }
+        });
     }
 
     /**

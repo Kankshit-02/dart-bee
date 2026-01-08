@@ -493,6 +493,220 @@ const Stats = (() => {
     }
 
     /**
+     * Get turn score distribution for charts
+     * Returns count of turns in different score ranges
+     */
+    async function getScoreDistribution(playerName) {
+        // Get player ID
+        const { data: playerData } = await getSupabaseClient()
+            .from('players')
+            .select('id')
+            .eq('name', playerName)
+            .single();
+
+        if (!playerData) {
+            return { low: 0, medium: 0, good: 0, high: 0, perfect: 0 };
+        }
+
+        // Get all turns for this player
+        const { data: turns } = await getSupabaseClient()
+            .from('turns')
+            .select(`
+                turn_total,
+                game_player:game_players!inner(
+                    player_id
+                )
+            `)
+            .eq('game_player.player_id', playerData.id);
+
+        const distribution = {
+            low: 0,      // 0-59
+            medium: 0,   // 60-99
+            good: 0,     // 100-139
+            high: 0,     // 140-179
+            perfect: 0   // 180
+        };
+
+        (turns || []).forEach(turn => {
+            const score = turn.turn_total || 0;
+            if (score === 180) {
+                distribution.perfect++;
+            } else if (score >= 140) {
+                distribution.high++;
+            } else if (score >= 100) {
+                distribution.good++;
+            } else if (score >= 60) {
+                distribution.medium++;
+            } else {
+                distribution.low++;
+            }
+        });
+
+        return distribution;
+    }
+
+    /**
+     * Get recent game performance data for charts
+     * Returns array of {date, avgPerDart, won, darts, score} objects
+     */
+    async function getRecentPerformance(playerName, limit = 10) {
+        const games = await Storage.getPlayerGames(playerName, limit);
+
+        return games.map(game => {
+            const playerData = game.players.find(p => p.name === playerName);
+            const darts = playerData?.stats?.totalDarts || 0;
+            const score = playerData?.stats?.totalScore || 0;
+
+            return {
+                id: game.id,
+                date: new Date(game.created_at).toLocaleDateString(),
+                avgPerDart: darts > 0 ? (score / darts).toFixed(2) : '0.00',
+                won: playerData?.winner || false,
+                darts: darts,
+                score: score
+            };
+        });
+    }
+
+    /**
+     * Get comprehensive global statistics
+     * Used for the main Stats page
+     */
+    async function getGlobalStats() {
+        try {
+            // Get all aggregated data in parallel
+            const [
+                gamesResult,
+                playersResult,
+                leaderboardResult,
+                totalsResult
+            ] = await Promise.all([
+                // Total completed games
+                getSupabaseClient()
+                    .from('games')
+                    .select('*', { count: 'exact', head: true })
+                    .not('completed_at', 'is', null),
+
+                // Get all players with stats
+                getSupabaseClient()
+                    .from('players')
+                    .select('*')
+                    .gt('total_games_played', 0),
+
+                // Get leaderboard
+                getSupabaseClient()
+                    .from('player_leaderboard')
+                    .select('*')
+                    .order('rank_by_wins', { ascending: true })
+                    .limit(10),
+
+                // Get sum totals
+                getSupabaseClient()
+                    .from('players')
+                    .select('total_darts_thrown, total_score, total_180s, total_140_plus, total_games_played, total_games_won')
+            ]);
+
+            // Calculate aggregated totals
+            const players = playersResult.data || [];
+            const totals = totalsResult.data || [];
+
+            let totalDarts = 0;
+            let totalScore = 0;
+            let total180s = 0;
+            let total140plus = 0;
+            let totalGames = 0;
+            let totalWins = 0;
+            let highestAvg = 0;
+            let highestAvgPlayer = '';
+            let most180s = 0;
+            let most180sPlayer = '';
+            let highestMaxTurn = 0;
+            let highestMaxTurnPlayer = '';
+
+            players.forEach(p => {
+                totalDarts += p.total_darts_thrown || 0;
+                totalScore += p.total_score || 0;
+                total180s += p.total_180s || 0;
+                total140plus += p.total_140_plus || 0;
+                totalGames += p.total_games_played || 0;
+                totalWins += p.total_games_won || 0;
+
+                const avg = parseFloat(p.avg_per_dart) || 0;
+                if (avg > highestAvg) {
+                    highestAvg = avg;
+                    highestAvgPlayer = p.name;
+                }
+
+                if ((p.total_180s || 0) > most180s) {
+                    most180s = p.total_180s || 0;
+                    most180sPlayer = p.name;
+                }
+
+                if ((p.max_turn_score || 0) > highestMaxTurn) {
+                    highestMaxTurn = p.max_turn_score || 0;
+                    highestMaxTurnPlayer = p.name;
+                }
+            });
+
+            return {
+                totalGames: gamesResult.count || 0,
+                totalPlayers: players.length,
+                totalDarts,
+                totalScore,
+                total180s,
+                total140plus,
+                averagePerDart: totalDarts > 0 ? (totalScore / totalDarts).toFixed(2) : '0.00',
+                records: {
+                    highestAvg: highestAvg.toFixed(2),
+                    highestAvgPlayer,
+                    most180s,
+                    most180sPlayer,
+                    highestMaxTurn,
+                    highestMaxTurnPlayer
+                },
+                topPlayers: leaderboardResult.data || [],
+                players: players.map(p => ({
+                    name: p.name,
+                    gamesPlayed: p.total_games_played,
+                    gamesWon: p.total_games_won
+                }))
+            };
+        } catch (e) {
+            console.error('Error getting global stats:', e);
+            return {
+                totalGames: 0,
+                totalPlayers: 0,
+                totalDarts: 0,
+                totalScore: 0,
+                total180s: 0,
+                total140plus: 0,
+                averagePerDart: '0.00',
+                records: {},
+                topPlayers: [],
+                players: []
+            };
+        }
+    }
+
+    /**
+     * Get all player names for dropdown
+     */
+    async function getAllPlayerNames() {
+        try {
+            const { data } = await getSupabaseClient()
+                .from('players')
+                .select('name')
+                .gt('total_games_played', 0)
+                .order('name');
+
+            return (data || []).map(p => p.name);
+        } catch (e) {
+            console.error('Error getting player names:', e);
+            return [];
+        }
+    }
+
+    /**
      * Get empty stats object
      */
     function getEmptyStats() {
@@ -525,6 +739,10 @@ const Stats = (() => {
         getQuickStats,
         formatStat,
         comparePlayerStats,
-        getHeadToHeadRecord
+        getHeadToHeadRecord,
+        getScoreDistribution,
+        getRecentPerformance,
+        getGlobalStats,
+        getAllPlayerNames
     };
 })();

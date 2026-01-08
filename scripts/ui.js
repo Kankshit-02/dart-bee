@@ -839,7 +839,17 @@ const UI = (() => {
             'max-turn': 'Top Turn'
         }[metric] || 'Wins';
 
-        container.innerHTML = rankings.map((entry, index) => {
+        // Build HTML with chart container first
+        let html = `
+            <div class="leaderboard-chart-section">
+                <div class="chart-container chart-container-leaderboard">
+                    <canvas id="leaderboardChart"></canvas>
+                </div>
+            </div>
+            <div class="leaderboard-entries">
+        `;
+
+        html += rankings.map((entry, index) => {
             const rank = index + 1;
             const rankClass = `rank-${rank}`;
             let metricDisplay = '';
@@ -875,16 +885,73 @@ const UI = (() => {
                 </div>
             `;
         }).join('');
+
+        html += '</div>';
+        container.innerHTML = html;
+
+        // Render leaderboard chart after DOM update
+        setTimeout(() => {
+            Charts.createLeaderboardChart('leaderboardChart', rankings, metric);
+        }, 50);
     }
 
     /**
-     * Render player profile
+     * Render player profile with charts
      */
     async function renderPlayerProfile(playerName) {
-        const stats = await Stats.calculatePlayerStats(playerName);
         const content = document.getElementById('player-profile-content');
 
+        // Show loading state
+        content.innerHTML = '<div class="loading-charts"><p>Loading stats...</p></div>';
+
+        // Fetch all data in parallel for better performance
+        const [stats, scoreDistribution, recentPerformance] = await Promise.all([
+            Stats.calculatePlayerStats(playerName),
+            Stats.getScoreDistribution(playerName),
+            Stats.getRecentPerformance(playerName, 10)
+        ]);
+
         let html = `
+            <!-- Charts Section -->
+            <div class="profile-charts-grid">
+                <!-- Win/Loss Chart -->
+                <div class="chart-card">
+                    <h3>Win/Loss Record</h3>
+                    <div class="chart-container chart-container-small">
+                        <canvas id="winLossChart"></canvas>
+                    </div>
+                    <div class="chart-summary">
+                        <span class="chart-stat wins">${stats.gamesWon} Wins</span>
+                        <span class="chart-stat losses">${stats.gamesPlayed - stats.gamesWon} Losses</span>
+                    </div>
+                </div>
+
+                <!-- Stats Radar Chart -->
+                <div class="chart-card">
+                    <h3>Performance Overview</h3>
+                    <div class="chart-container chart-container-small">
+                        <canvas id="statsRadarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Trend Chart (Full Width) -->
+            <div class="chart-card chart-card-wide">
+                <h3>Performance Trend (Last 10 Games)</h3>
+                <div class="chart-container chart-container-line">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Score Distribution Chart -->
+            <div class="chart-card chart-card-wide">
+                <h3>Turn Score Distribution</h3>
+                <div class="chart-container chart-container-bar">
+                    <canvas id="scoreDistributionChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Stats Grid -->
             <div class="profile-section">
                 <h3>Overall Stats</h3>
                 <div class="stats-matrix">
@@ -944,10 +1011,14 @@ const UI = (() => {
             </div>
         `;
 
+        // Head-to-Head section with chart
         if (Object.keys(stats.headToHead).length > 0) {
             html += `
                 <div class="profile-section">
                     <h3>Head-to-Head Records</h3>
+                    <div class="chart-container chart-container-h2h">
+                        <canvas id="headToHeadChart"></canvas>
+                    </div>
                     <div class="head-to-head-list">
                         ${Object.entries(stats.headToHead).map(([opponent, record]) => {
                             const total = record.wins + record.losses;
@@ -968,6 +1039,30 @@ const UI = (() => {
 
         document.getElementById('profile-player-name').textContent = `${playerName}'s Profile`;
         content.innerHTML = html;
+
+        // Render charts after DOM is updated
+        setTimeout(() => {
+            // Win/Loss Doughnut Chart
+            Charts.createWinLossChart(
+                'winLossChart',
+                stats.gamesWon,
+                stats.gamesPlayed - stats.gamesWon
+            );
+
+            // Stats Radar Chart
+            Charts.createStatsRadarChart('statsRadarChart', stats);
+
+            // Performance Trend Line Chart
+            Charts.createPerformanceChart('performanceChart', recentPerformance);
+
+            // Score Distribution Bar Chart
+            Charts.createScoreDistributionChart('scoreDistributionChart', scoreDistribution);
+
+            // Head-to-Head Chart (if data exists)
+            if (Object.keys(stats.headToHead).length > 0) {
+                Charts.createHeadToHeadChart('headToHeadChart', stats.headToHead);
+            }
+        }, 50);
     }
 
     /**
@@ -1269,6 +1364,320 @@ const UI = (() => {
         }
     }
 
+    /**
+     * Render the global stats page
+     */
+    async function renderStatsPage() {
+        const summaryContainer = document.getElementById('global-stats-summary');
+        const widgetsContainer = document.getElementById('player-stats-widgets');
+        const playerSelect = document.getElementById('stats-player-select');
+
+        // Show loading
+        summaryContainer.innerHTML = '<div class="loading-charts"><p>Loading statistics...</p></div>';
+        widgetsContainer.innerHTML = '';
+
+        // Get global stats and player names
+        const [globalStats, playerNames] = await Promise.all([
+            Stats.getGlobalStats(),
+            Stats.getAllPlayerNames()
+        ]);
+
+        // Populate player dropdown
+        playerSelect.innerHTML = '<option value="">-- Select Player --</option>' +
+            playerNames.map(name => `<option value="${name}">${name}</option>`).join('');
+
+        // Also populate comparison dropdowns
+        const compareSelect1 = document.getElementById('compare-player-1');
+        const compareSelect2 = document.getElementById('compare-player-2');
+        if (compareSelect1 && compareSelect2) {
+            const options = '<option value="">Select Player</option>' +
+                playerNames.map(name => `<option value="${name}">${name}</option>`).join('');
+            compareSelect1.innerHTML = options;
+            compareSelect2.innerHTML = options;
+        }
+
+        // Render global stats summary with animated counters
+        const counters = [];
+
+        let html = `
+            <!-- Global Stats Cards -->
+            <div class="global-stats-grid">
+                <div class="global-stat-card">
+                    <div class="global-stat-icon">🎮</div>
+                    <div class="global-stat-content">
+                        <div class="global-stat-value" id="counter-games">${globalStats.totalGames}</div>
+                        <div class="global-stat-label">Total Games</div>
+                    </div>
+                </div>
+                <div class="global-stat-card">
+                    <div class="global-stat-icon">👥</div>
+                    <div class="global-stat-content">
+                        <div class="global-stat-value" id="counter-players">${globalStats.totalPlayers}</div>
+                        <div class="global-stat-label">Active Players</div>
+                    </div>
+                </div>
+                <div class="global-stat-card">
+                    <div class="global-stat-icon">🎯</div>
+                    <div class="global-stat-content">
+                        <div class="global-stat-value" id="counter-darts">${globalStats.totalDarts.toLocaleString()}</div>
+                        <div class="global-stat-label">Darts Thrown</div>
+                    </div>
+                </div>
+                <div class="global-stat-card">
+                    <div class="global-stat-icon">📊</div>
+                    <div class="global-stat-content">
+                        <div class="global-stat-value" id="counter-score">${globalStats.totalScore.toLocaleString()}</div>
+                        <div class="global-stat-label">Total Points</div>
+                    </div>
+                </div>
+                <div class="global-stat-card highlight">
+                    <div class="global-stat-icon">🔥</div>
+                    <div class="global-stat-content">
+                        <div class="global-stat-value" id="counter-180s">${globalStats.total180s}</div>
+                        <div class="global-stat-label">Total 180s</div>
+                    </div>
+                </div>
+                <div class="global-stat-card">
+                    <div class="global-stat-icon">⚡</div>
+                    <div class="global-stat-content">
+                        <div class="global-stat-value" id="counter-140s">${globalStats.total140plus}</div>
+                        <div class="global-stat-label">140+ Turns</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Records Section -->
+            <div class="records-section">
+                <h3>🏅 All-Time Records</h3>
+                <div class="records-grid">
+                    <div class="record-card">
+                        <div class="record-icon">📈</div>
+                        <div class="record-content">
+                            <div class="record-value">${globalStats.records.highestAvg || '0.00'}</div>
+                            <div class="record-label">Best Avg/Dart</div>
+                            <div class="record-holder">${globalStats.records.highestAvgPlayer || 'N/A'}</div>
+                        </div>
+                    </div>
+                    <div class="record-card">
+                        <div class="record-icon">🎯</div>
+                        <div class="record-content">
+                            <div class="record-value">${globalStats.records.most180s || 0}</div>
+                            <div class="record-label">Most 180s</div>
+                            <div class="record-holder">${globalStats.records.most180sPlayer || 'N/A'}</div>
+                        </div>
+                    </div>
+                    <div class="record-card">
+                        <div class="record-icon">💥</div>
+                        <div class="record-content">
+                            <div class="record-value">${globalStats.records.highestMaxTurn || 0}</div>
+                            <div class="record-label">Highest Turn</div>
+                            <div class="record-holder">${globalStats.records.highestMaxTurnPlayer || 'N/A'}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fun Facts Section -->
+            <div class="fun-facts-section">
+                <h3>📊 Fun Facts</h3>
+                <div class="fun-facts-grid">
+                    <div class="fun-fact">
+                        <span class="fun-fact-value">${globalStats.averagePerDart}</span>
+                        <span class="fun-fact-label">Global Avg per Dart</span>
+                    </div>
+                    <div class="fun-fact">
+                        <span class="fun-fact-value">${globalStats.totalDarts > 0 ? Math.round(globalStats.totalDarts / Math.max(globalStats.totalGames, 1)) : 0}</span>
+                        <span class="fun-fact-label">Avg Darts per Game</span>
+                    </div>
+                    <div class="fun-fact">
+                        <span class="fun-fact-value">${globalStats.totalGames > 0 ? (globalStats.total180s / globalStats.totalGames).toFixed(2) : 0}</span>
+                        <span class="fun-fact-label">180s per Game</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        summaryContainer.innerHTML = html;
+
+        // Initial placeholder for player widgets
+        widgetsContainer.innerHTML = `
+            <div class="player-widgets-placeholder">
+                <p>👆 Select a player above to see detailed statistics, achievements, and performance trends</p>
+            </div>
+        `;
+    }
+
+    /**
+     * Render player-specific widgets on stats page
+     */
+    async function renderPlayerStatsWidgets(playerName) {
+        const container = document.getElementById('player-stats-widgets');
+        if (!playerName) {
+            container.innerHTML = `
+                <div class="player-widgets-placeholder">
+                    <p>👆 Select a player above to see detailed statistics, achievements, and performance trends</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = '<div class="loading-charts"><p>Loading player stats...</p></div>';
+
+        // Get player data
+        const [stats, scoreDistribution, recentPerformance] = await Promise.all([
+            Stats.calculatePlayerStats(playerName),
+            Stats.getScoreDistribution(playerName),
+            Stats.getRecentPerformance(playerName, 20)
+        ]);
+
+        const prefs = StatsWidgets.getPreferences();
+
+        let html = `<div class="player-widgets-header"><h2>${playerName}'s Dashboard</h2></div>`;
+
+        // Achievements section
+        if (prefs.showAchievements) {
+            const achievementsHtml = StatsWidgets.renderAchievementBadges(stats, false);
+            html += `
+                <div class="widget-section achievements-container" data-player="${playerName}">
+                    <h3>🏆 Achievements</h3>
+                    ${achievementsHtml}
+                </div>
+            `;
+        }
+
+        // Streaks section
+        if (prefs.showStreaks) {
+            const streakData = StatsWidgets.calculateStreaks(recentPerformance);
+            html += `
+                <div class="widget-section">
+                    <h3>🔥 Current Form</h3>
+                    ${StatsWidgets.renderStreaks(streakData)}
+                </div>
+            `;
+        }
+
+        // Progress Rings section
+        if (prefs.showProgressRings) {
+            html += `
+                <div class="widget-section">
+                    <h3>🎯 Goal Progress</h3>
+                    ${StatsWidgets.renderProgressRings(stats, prefs.goals)}
+                </div>
+            `;
+        }
+
+        // Charts row
+        html += `
+            <div class="charts-row">
+                <div class="chart-card">
+                    <h3>Win/Loss Record</h3>
+                    <div class="chart-container chart-container-small">
+                        <canvas id="playerWinLossChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3>Performance Overview</h3>
+                    <div class="chart-container chart-container-small">
+                        <canvas id="playerRadarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="chart-card chart-card-wide">
+                <h3>Performance Trend</h3>
+                <div class="chart-container chart-container-line">
+                    <canvas id="playerPerformanceChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-card chart-card-wide">
+                <h3>Score Distribution</h3>
+                <div class="chart-container chart-container-bar">
+                    <canvas id="playerScoreDistChart"></canvas>
+                </div>
+            </div>
+        `;
+
+        // Activity Heatmap section
+        if (prefs.showHeatmap) {
+            const activityData = await StatsWidgets.getActivityData(playerName, 84);
+            html += `
+                <div class="widget-section">
+                    <h3>📅 Activity (Last 12 Weeks)</h3>
+                    ${StatsWidgets.renderActivityHeatmap(activityData, 12)}
+                </div>
+            `;
+        }
+
+        container.innerHTML = html;
+
+        // Render charts
+        setTimeout(() => {
+            Charts.createWinLossChart('playerWinLossChart', stats.gamesWon, stats.gamesPlayed - stats.gamesWon);
+            Charts.createStatsRadarChart('playerRadarChart', stats);
+            Charts.createPerformanceChart('playerPerformanceChart', recentPerformance);
+            Charts.createScoreDistributionChart('playerScoreDistChart', scoreDistribution);
+        }, 50);
+    }
+
+    /**
+     * Open comparison modal
+     */
+    function openComparisonModal() {
+        const modal = document.getElementById('comparison-modal');
+        if (modal) {
+            modal.classList.remove('hidden');
+        }
+    }
+
+    /**
+     * Close comparison modal
+     */
+    function closeComparisonModal() {
+        const modal = document.getElementById('comparison-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Run player comparison
+     */
+    async function runPlayerComparison() {
+        const player1 = document.getElementById('compare-player-1')?.value;
+        const player2 = document.getElementById('compare-player-2')?.value;
+        const resultContainer = document.getElementById('comparison-result');
+
+        if (!player1 || !player2) {
+            resultContainer.innerHTML = '<p class="error">Please select both players</p>';
+            return;
+        }
+
+        if (player1 === player2) {
+            resultContainer.innerHTML = '<p class="error">Please select different players</p>';
+            return;
+        }
+
+        resultContainer.innerHTML = '<div class="loading-charts"><p>Comparing...</p></div>';
+
+        const [stats1, stats2] = await Promise.all([
+            Stats.calculatePlayerStats(player1),
+            Stats.calculatePlayerStats(player2)
+        ]);
+
+        let html = StatsWidgets.renderPlayerComparison(stats1, stats2, player1, player2);
+        html += `
+            <div class="comparison-chart-container">
+                <canvas id="comparisonRadarChart"></canvas>
+            </div>
+        `;
+
+        resultContainer.innerHTML = html;
+
+        // Render comparison radar chart
+        setTimeout(() => {
+            StatsWidgets.createComparisonRadarChart('comparisonRadarChart', stats1, stats2, player1, player2);
+        }, 50);
+    }
+
     // Public API
     return {
         showToast,
@@ -1292,6 +1701,11 @@ const UI = (() => {
         updateActiveGameUI,
         renderSpectatorGame,
         updateWinnersBoard,
-        getPaginationState: () => paginationState
+        getPaginationState: () => paginationState,
+        renderStatsPage,
+        renderPlayerStatsWidgets,
+        openComparisonModal,
+        closeComparisonModal,
+        runPlayerComparison
     };
 })();

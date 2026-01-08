@@ -161,8 +161,9 @@ const UI = (() => {
                                 ${game.players.map(p => {
                                     const playerTurns = p.turns.length;
                                     return `
-                                        <div class="player-badge ${p.name === currentPlayer?.name ? 'current' : ''}">
-                                            ${p.name} (${playerTurns} turn${playerTurns !== 1 ? 's' : ''})
+                                        <div class="player-badge ${p.name === currentPlayer?.name ? 'current' : ''}" style="display: flex; justify-content: space-between; align-items: center;">
+                                            <span>${p.name}</span>
+                                            <span style="font-weight: 700; color: ${p.currentScore <= 50 ? '#4caf50' : 'inherit'};">${p.currentScore}</span>
                                         </div>
                                     `;
                                 }).join('')}

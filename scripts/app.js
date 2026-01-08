@@ -374,11 +374,10 @@ const App = (() => {
                 {
                     event: '*',
                     schema: 'public',
-                    table: 'games',
-                    filter: 'is_active=eq.true'
+                    table: 'games'
                 },
                 async () => {
-                    console.log('Active game updated, refreshing home...');
+                    console.log('Games table updated, refreshing home...');
                     await UI.renderRecentGames();
                 }
             )
@@ -389,7 +388,18 @@ const App = (() => {
                     table: 'game_players'
                 },
                 async () => {
-                    // Player stats updated, refresh home
+                    console.log('Game players updated, refreshing home...');
+                    await UI.renderRecentGames();
+                }
+            )
+            .on('postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'turns'
+                },
+                async () => {
+                    console.log('New turn added, refreshing home...');
                     await UI.renderRecentGames();
                 }
             )

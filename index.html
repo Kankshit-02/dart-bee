@@ -57,6 +57,10 @@
                     <span class="icon">🏆</span>
                     <span class="label">Leaderboard</span>
                 </button>
+                <button class="nav-link" data-page="stats" aria-label="Stats">
+                    <span class="icon">📊</span>
+                    <span class="label">Stats</span>
+                </button>
             </div>
         </nav>
 
@@ -340,6 +344,56 @@
                 </div>
             </div>
 
+            <!-- Global Stats Page -->
+            <div id="stats-page" class="page">
+                <div class="page-header">
+                    <h1>Global Statistics</h1>
+                    <button class="btn btn-secondary btn-small" id="stats-settings-btn" onclick="StatsWidgets.openSettings()">
+                        ⚙️ Customize
+                    </button>
+                </div>
+
+                <!-- Player Selector for detailed stats -->
+                <div class="stats-player-selector">
+                    <label for="stats-player-select">View stats for:</label>
+                    <select id="stats-player-select" class="form-input">
+                        <option value="">-- Select Player --</option>
+                    </select>
+                    <button class="btn btn-secondary btn-small" id="compare-players-btn">Compare Players</button>
+                </div>
+
+                <!-- Global Stats Summary -->
+                <div id="global-stats-summary" class="global-stats-summary">
+                    <!-- Dynamically generated -->
+                </div>
+
+                <!-- Player-specific widgets (when player selected) -->
+                <div id="player-stats-widgets" class="player-stats-widgets">
+                    <!-- Dynamically generated -->
+                </div>
+
+                <!-- Player Comparison Modal -->
+                <div id="comparison-modal" class="comparison-modal hidden">
+                    <div class="comparison-modal-content">
+                        <button class="modal-close" onclick="UI.closeComparisonModal()">×</button>
+                        <h2>Compare Players</h2>
+                        <div class="comparison-selectors">
+                            <select id="compare-player-1" class="form-input">
+                                <option value="">Select Player 1</option>
+                            </select>
+                            <span class="vs-text">VS</span>
+                            <select id="compare-player-2" class="form-input">
+                                <option value="">Select Player 2</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="run-comparison-btn">Compare</button>
+                        <div id="comparison-result" class="comparison-result">
+                            <!-- Dynamically generated -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Player Profile Page -->
             <div id="player-profile-page" class="page hidden">
                 <div class="page-header">
@@ -384,11 +438,13 @@
     <script src="scripts/stats.js?v=20260108.1700"></script>
     <!-- 6. Charts module -->
     <script src="scripts/charts.js?v=20260108.1700"></script>
-    <!-- 7. Router for URL-based navigation -->
+    <!-- 7. Stats Widgets module -->
+    <script src="scripts/statsWidgets.js?v=20260108.1700"></script>
+    <!-- 8. Router for URL-based navigation -->
     <script src="scripts/router.js?v=20260108.1700"></script>
-    <!-- 8. UI rendering -->
+    <!-- 9. UI rendering -->
     <script src="scripts/ui.js?v=20260108.1700"></script>
-    <!-- 9. Main app logic -->
+    <!-- 10. Main app logic -->
     <script src="scripts/app.js?v=20260108.1700"></script>
 </body>
 </html>

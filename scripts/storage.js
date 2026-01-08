@@ -398,12 +398,23 @@ const Storage = (() => {
             // Winner is the player with finish_rank = 1 (first to finish)
             // NOT just any player with winner: true (multiple can reach 0 in darts)
             if (updates.completed_at && updates.players) {
+                // DEBUG: Log winner detection
+                console.log('=== updateGame Winner Detection DEBUG ===');
+                console.log('Game ID:', gameId);
+                console.log('completed_at:', updates.completed_at);
+                console.log('Players:');
+                updates.players.forEach((p, i) => {
+                    console.log(`  [${i}] ${p.name}: score=${p.currentScore}, winner=${p.winner}, finish_rank=${p.finish_rank}`);
+                });
+
                 // First try to find player with finish_rank = 1
                 let winner = updates.players.find(p => p.finish_rank === 1);
+                console.log('Winner by finish_rank=1:', winner ? winner.name : 'NONE FOUND');
 
                 // Fallback: if no finish_rank, find first player with winner: true
                 if (!winner) {
                     winner = updates.players.find(p => p.winner);
+                    console.log('Winner by winner=true fallback:', winner ? winner.name : 'NONE FOUND');
                 }
 
                 // Last fallback: player with lowest score
@@ -412,7 +423,11 @@ const Storage = (() => {
                         (a.currentScore || a.score || 0) - (b.currentScore || b.score || 0)
                     );
                     winner = sorted[0];
+                    console.log('Winner by lowest score fallback:', winner ? winner.name : 'NONE FOUND');
+                    console.log('Sorted by score:', sorted.map(p => `${p.name}:${p.currentScore}`).join(', '));
                 }
+
+                console.log('FINAL winner selected:', winner ? winner.name : 'NONE');
 
                 if (winner) {
                     const { data: playerData } = await sb
@@ -423,6 +438,7 @@ const Storage = (() => {
 
                     if (playerData) {
                         gameUpdates.winner_id = playerData.id;
+                        console.log('Set winner_id to:', playerData.id, 'for player:', winner.name);
                     }
                 }
             }
@@ -465,6 +481,14 @@ const Storage = (() => {
 
             if (!existingGP) return;
 
+            // DEBUG: Log all players before update
+            console.log('=== updateGamePlayers DEBUG ===');
+            console.log('Game ID:', gameId);
+            console.log('Players to update:');
+            players.forEach((p, i) => {
+                console.log(`  [${i}] ${p.name}: score=${p.currentScore}, winner=${p.winner}, finish_rank=${p.finish_rank}, finish_round=${p.finish_round}`);
+            });
+
             // Update each player's stats
             for (const player of players) {
                 const gp = existingGP.find(g => g.player.name === player.name);
@@ -474,6 +498,8 @@ const Storage = (() => {
                 // is_winner should be true only for the actual winner (finish_rank = 1)
                 // NOT for everyone who reached 0 (player.winner)
                 const isActualWinner = player.finish_rank === 1;
+
+                console.log(`  Updating ${player.name}: finish_rank=${player.finish_rank}, isActualWinner=${isActualWinner}`);
 
                 await sb
                     .from('game_players')

@@ -8,6 +8,7 @@ const App = (() => {
     let isSpectatorMode = false;
     let isOperationInProgress = false;
     let spectatorSubscription = null;
+    let homeSubscription = null;
 
     /**
      * Check if an operation is in progress
@@ -50,10 +51,13 @@ const App = (() => {
     async function handleRoute(routeInfo) {
         console.log('Handling route:', routeInfo);
 
-        // Clean up spectator subscription when navigating away
+        // Clean up subscriptions when navigating away
         if (isSpectatorMode && routeInfo.route !== 'game') {
             unsubscribeFromGameUpdates();
             isSpectatorMode = false;
+        }
+        if (routeInfo.route !== 'home') {
+            unsubscribeFromHomeUpdates();
         }
 
         try {
@@ -345,11 +349,62 @@ const App = (() => {
         try {
             UI.showPage('home-page');
             await UI.renderRecentGames();
+            // Subscribe to live updates for active games
+            subscribeToHomeUpdates();
         } catch (error) {
             console.error('Error loading home:', error);
             UI.showToast('Failed to load dashboard', 'error');
         } finally {
             UI.hideLoader();
+        }
+    }
+
+    /**
+     * Subscribe to real-time updates for home page (active games)
+     */
+    function subscribeToHomeUpdates() {
+        unsubscribeFromHomeUpdates();
+
+        const supabase = Storage.sb;
+        if (!supabase) return;
+
+        homeSubscription = supabase
+            .channel('home-games')
+            .on('postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'games',
+                    filter: 'is_active=eq.true'
+                },
+                async () => {
+                    console.log('Active game updated, refreshing home...');
+                    await UI.renderRecentGames();
+                }
+            )
+            .on('postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'game_players'
+                },
+                async () => {
+                    // Player stats updated, refresh home
+                    await UI.renderRecentGames();
+                }
+            )
+            .subscribe((status) => {
+                console.log('Home subscription status:', status);
+            });
+    }
+
+    /**
+     * Unsubscribe from home updates
+     */
+    function unsubscribeFromHomeUpdates() {
+        if (homeSubscription) {
+            Storage.sb?.removeChannel(homeSubscription);
+            homeSubscription = null;
         }
     }
 

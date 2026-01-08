@@ -824,8 +824,8 @@ const UI = (() => {
         const metricLabel = {
             'wins': 'Wins',
             'win-rate': 'Win Rate',
-            'avg-dart': 'Avg/Dart',
-            '180s': '180s'
+            'avg-dart': 'Avg/Turn',
+            'max-turn': 'Top Turn'
         }[metric] || 'Wins';
 
         container.innerHTML = rankings.map((entry, index) => {
@@ -841,10 +841,10 @@ const UI = (() => {
                     metricDisplay = `${entry.stats.winRate}%`;
                     break;
                 case 'avg-dart':
-                    metricDisplay = entry.stats.avgPerDart;
+                    metricDisplay = entry.stats.avgPerTurn || entry.stats.avgPerDart;
                     break;
-                case '180s':
-                    metricDisplay = entry.stats.total180s;
+                case 'max-turn':
+                    metricDisplay = entry.stats.maxTurn || entry.fullStats?.maxTurn || 0;
                     break;
             }
 

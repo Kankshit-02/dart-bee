@@ -37,7 +37,12 @@ const Router = (() => {
             if (pathParts[1] === 'player' && pathParts[2]) {
                 return { route: 'player-profile', playerName: decodeURIComponent(pathParts[2]) };
             }
-            return { route: 'leaderboard' };
+            // Support subtab routes: #/leaderboard/:metric/:filter
+            const validMetrics = ['wins', 'win-rate', 'avg-dart', 'max-turn'];
+            const validFilters = ['all-time', '30-days', '7-days'];
+            const metric = validMetrics.includes(pathParts[1]) ? pathParts[1] : 'wins';
+            const filter = validFilters.includes(pathParts[2]) ? pathParts[2] : 'all-time';
+            return { route: 'leaderboard', metric, filter };
         }
 
         if (pathParts[0] === 'new-game') {
@@ -70,7 +75,10 @@ const Router = (() => {
                 path = `#/history/game/${params.gameId}`;
                 break;
             case 'leaderboard':
-                path = '#/leaderboard';
+                // Support subtab params: metric and filter
+                const metric = params.metric || 'wins';
+                const filter = params.filter || 'all-time';
+                path = `#/leaderboard/${metric}/${filter}`;
                 break;
             case 'player-profile':
                 path = `#/leaderboard/player/${encodeURIComponent(params.playerName)}`;

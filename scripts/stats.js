@@ -135,13 +135,13 @@ const Stats = (() => {
      * OPTIMIZED: Single query instead of N+1 pattern
      */
     async function getLeaderboard(metric = 'wins', timeFilter = 'all-time') {
-        // Determine which rank column to use
-        const rankColumn = {
-            'wins': 'rank_by_wins',
-            'win-rate': 'rank_by_win_rate',
-            'avg-dart': 'rank_by_avg',
-            '180s': 'rank_by_180s'
-        }[metric] || 'rank_by_wins';
+        // Determine which column to sort by
+        const sortConfig = {
+            'wins': { column: 'rank_by_wins', ascending: true },
+            'win-rate': { column: 'rank_by_win_rate', ascending: true },
+            'avg-dart': { column: 'rank_by_avg', ascending: true },
+            'max-turn': { column: 'max_turn_score', ascending: false }  // Sort by value descending
+        }[metric] || { column: 'rank_by_wins', ascending: true };
 
         // For time-based filtering, we need to query games directly
         // For all-time, use the materialized view
@@ -149,7 +149,7 @@ const Stats = (() => {
             const { data, error } = await getSupabaseClient()
                 .from('player_leaderboard')
                 .select('*')
-                .order(rankColumn, { ascending: true })
+                .order(sortConfig.column, { ascending: sortConfig.ascending })
                 .limit(100);
 
             if (error) {
@@ -167,7 +167,9 @@ const Stats = (() => {
                     winRate: parseFloat(player.win_rate || 0).toFixed(1),
                     totalDarts: player.total_darts_thrown,
                     total180s: player.total_180s,
-                    avgPerDart: parseFloat(player.avg_per_dart || 0).toFixed(2)
+                    avgPerDart: parseFloat(player.avg_per_dart || 0).toFixed(2),
+                    avgPerTurn: parseFloat(player.avg_per_turn || 0).toFixed(2),
+                    maxTurn: player.max_turn_score || 0
                 },
                 fullStats: {
                     gamesPlayed: player.total_games_played,
@@ -212,6 +214,7 @@ const Stats = (() => {
                     total_darts,
                     total_score,
                     total_turns,
+                    max_turn,
                     player:players!inner(id, name)
                 )
             `)
@@ -231,7 +234,8 @@ const Stats = (() => {
                         totalDarts: 0,
                         totalScore: 0,
                         totalTurns: 0,
-                        total180s: 0
+                        total180s: 0,
+                        maxTurn: 0
                     };
                 }
 
@@ -242,6 +246,7 @@ const Stats = (() => {
                 stats.totalScore += gp.total_score || 0;
                 stats.totalTurns += gp.total_turns || 0;
                 stats.total180s += gp.count_180s || 0;
+                stats.maxTurn = Math.max(stats.maxTurn, gp.max_turn || 0);
             });
         });
 
@@ -260,7 +265,9 @@ const Stats = (() => {
                 winRate: winRate,
                 totalDarts: stats.totalDarts,
                 total180s: stats.total180s,
-                avgPerDart: avgPerDart
+                avgPerDart: avgPerDart,
+                avgPerTurn: stats.totalTurns > 0 ? (stats.totalScore / stats.totalTurns).toFixed(2) : '0.00',
+                maxTurn: stats.maxTurn
             };
 
             return {
@@ -357,9 +364,9 @@ const Stats = (() => {
             case 'win-rate':
                 return parseFloat(stats.winRate || stats.win_rate || 0);
             case 'avg-dart':
-                return parseFloat(stats.avgPerDart || stats.avg_per_dart || 0);
-            case '180s':
-                return stats.total180s || stats.total_180s || 0;
+                return parseFloat(stats.avgPerDart || stats.avg_per_dart || stats.avgPerTurn || stats.avg_per_turn || 0);
+            case 'max-turn':
+                return stats.maxTurn || stats.max_turn_score || stats.max_turn || 0;
             default:
                 return 0;
         }

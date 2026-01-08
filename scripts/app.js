@@ -71,7 +71,7 @@ const App = (() => {
                     break;
 
                 case 'leaderboard':
-                    await loadLeaderboard();
+                    await loadLeaderboard(routeInfo.metric, routeInfo.filter);
                     break;
 
                 case 'player-profile':
@@ -284,32 +284,32 @@ const App = (() => {
      * Setup leaderboard events
      */
     function setupLeaderboardEvents() {
-        // Time filters
+        // Time filters - navigate to update URL
         document.querySelectorAll('.time-filters .filter-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                document.querySelectorAll('.time-filters .filter-btn').forEach(b => b.classList.remove('active'));
-                e.target.classList.add('active');
+            btn.addEventListener('click', (e) => {
                 const filter = e.target.dataset.filter;
                 const metric = document.querySelector('.leaderboard-tabs .tab-btn.active').dataset.tab;
-                await UI.renderLeaderboard(metric, filter);
+                Router.navigate('leaderboard', { metric, filter });
             });
         });
 
-        // Metric tabs
+        // Metric tabs - navigate to update URL
         document.querySelectorAll('.leaderboard-tabs .tab-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                document.querySelectorAll('.leaderboard-tabs .tab-btn').forEach(b => b.classList.remove('active'));
-                e.target.classList.add('active');
+            btn.addEventListener('click', (e) => {
                 const metric = e.target.dataset.tab;
                 const filter = document.querySelector('.time-filters .filter-btn.active').dataset.filter;
-                await UI.renderLeaderboard(metric, filter);
+                Router.navigate('leaderboard', { metric, filter });
             });
         });
 
-        // Back to leaderboard from profile
+        // Back to leaderboard from profile - preserve current tab state
         const backBtn = document.getElementById('back-to-leaderboard');
         if (backBtn) {
-            backBtn.addEventListener('click', loadLeaderboard);
+            backBtn.addEventListener('click', () => {
+                const metric = document.querySelector('.leaderboard-tabs .tab-btn.active')?.dataset.tab || 'wins';
+                const filter = document.querySelector('.time-filters .filter-btn.active')?.dataset.filter || 'all-time';
+                Router.navigate('leaderboard', { metric, filter });
+            });
         }
     }
 
@@ -381,12 +381,21 @@ const App = (() => {
     /**
      * Load leaderboard page
      */
-    async function loadLeaderboard() {
+    async function loadLeaderboard(metric = 'wins', filter = 'all-time') {
         const profilePage = document.getElementById('player-profile-page');
         profilePage.classList.add('hidden');
         document.getElementById('leaderboard-page').classList.remove('hidden');
         UI.showPage('leaderboard-page');
-        await UI.renderLeaderboard('wins', 'all-time');
+
+        // Update active states for tabs based on URL params
+        document.querySelectorAll('.leaderboard-tabs .tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === metric);
+        });
+        document.querySelectorAll('.time-filters .filter-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.filter === filter);
+        });
+
+        await UI.renderLeaderboard(metric, filter);
     }
 
     /**

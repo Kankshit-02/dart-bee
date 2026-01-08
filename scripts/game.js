@@ -45,6 +45,7 @@ const Game = (() => {
                     totalDarts: 0,
                     totalScore: 0,
                     avgPerDart: 0,
+                    avgPerTurn: 0,
                     maxTurn: 0,
                     maxDart: 0,
                     checkoutAttempts: 0,
@@ -159,9 +160,13 @@ const Game = (() => {
             currentPlayer.stats.totalScore += totalScore;
             currentPlayer.stats.maxTurn = Math.max(currentPlayer.stats.maxTurn, totalScore);
             currentPlayer.stats.maxDart = Math.max(currentPlayer.stats.maxDart, Math.max(...darts));
-            // Calculate average per turn (for UI display)
-            currentPlayer.stats.avgPerDart =
+            // Calculate averages (for UI display)
+            currentPlayer.stats.avgPerTurn =
                 currentPlayer.stats.totalScore / currentPlayer.turns.length;
+            currentPlayer.stats.avgPerDart =
+                currentPlayer.stats.totalDarts > 0
+                    ? currentPlayer.stats.totalScore / currentPlayer.stats.totalDarts
+                    : 0;
         } else {
             currentPlayer.turns.push(turn);
         }
@@ -323,8 +328,12 @@ const Game = (() => {
         });
 
         if (currentPlayer.turns.length > 0) {
-            // Calculate average per turn (not per dart)
-            currentPlayer.stats.avgPerDart = currentPlayer.stats.totalScore / currentPlayer.turns.length;
+            // Calculate averages
+            currentPlayer.stats.avgPerTurn = currentPlayer.stats.totalScore / currentPlayer.turns.length;
+            currentPlayer.stats.avgPerDart =
+                currentPlayer.stats.totalDarts > 0
+                    ? currentPlayer.stats.totalScore / currentPlayer.stats.totalDarts
+                    : 0;
         }
 
         return { success: true, player: currentPlayer.name, score: currentPlayer.currentScore };
@@ -444,8 +453,9 @@ const Game = (() => {
                 winner: p.winner,
                 score: p.currentScore,
                 darts: p.stats.totalDarts,
-                avgPerDart: p.turns.length > 0 ? (p.stats.totalScore / p.turns.length).toFixed(2) : '0',
-                turns: p.turns.length
+                turns: p.turns.length,
+                avgPerTurn: p.turns.length > 0 ? (p.stats.totalScore / p.turns.length).toFixed(2) : '0',
+                avgPerDart: p.stats.totalDarts > 0 ? (p.stats.totalScore / p.stats.totalDarts).toFixed(2) : '0'
             })),
             duration: completedTime ? ((completedTime - createdTime) / 1000 / 60).toFixed(1) : null
         };
@@ -586,8 +596,9 @@ const Game = (() => {
                 rank: p.finish_rank,
                 score: p.currentScore,
                 darts: p.stats.totalDarts,
-                // Calculate average per turn (not per dart)
-                avgPerDart: p.turns.length > 0 ? (p.stats.totalScore / p.turns.length).toFixed(2) : 0
+                turns: p.turns.length,
+                avgPerTurn: p.turns.length > 0 ? (p.stats.totalScore / p.turns.length).toFixed(2) : 0,
+                avgPerDart: p.stats.totalDarts > 0 ? (p.stats.totalScore / p.stats.totalDarts).toFixed(2) : 0
             }))
             .sort((a, b) => (a.rank || 999) - (b.rank || 999));
     }

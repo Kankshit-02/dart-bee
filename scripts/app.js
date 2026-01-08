@@ -770,7 +770,7 @@ const App = (() => {
                     <span class="rank-medal">${medal}</span>
                     <span class="rank-position">${position}${suffix}</span>
                     <span class="rank-name">${player.name}</span>
-                    <span class="rank-stats">${player.darts} darts • ${parseFloat(player.avgPerDart).toFixed(1)} avg</span>
+                    <span class="rank-stats">${player.turns} turns • ${parseFloat(player.avgPerTurn || player.avgPerDart).toFixed(1)} avg</span>
                 </div>
             `;
         });

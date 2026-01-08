@@ -842,8 +842,8 @@ const UI = (() => {
                         <span class="detail-standings-name">${p.name}</span>
                         <span class="detail-standings-stats">
                             <span>Score: ${p.score}</span>
-                            <span>Darts: ${p.darts}</span>
-                            <span>Avg: ${p.avgPerDart}</span>
+                            <span>Turns: ${p.turns}</span>
+                            <span>Avg: ${p.avgPerTurn || p.avgPerDart}</span>
                         </span>
                     </div>
                 `;

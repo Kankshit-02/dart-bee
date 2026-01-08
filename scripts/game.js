@@ -511,20 +511,25 @@ const Game = (() => {
 
         console.log('Finished players:', finishedPlayers.map(fp => `${fp.player.name}:round${fp.finishRound}:${fp.totalTurns}turns:${fp.totalDarts}darts`).join(', '));
 
-        // Sort by finish round (ascending), then by turns (ascending) as tie-breaker
-        finishedPlayers.sort((a, b) => {
-            if (a.finishRound !== b.finishRound) {
-                return a.finishRound - b.finishRound;
-            }
-            // Same round: fewer turns = better rank
-            return a.totalTurns - b.totalTurns;
-        });
-        console.log('After sort:', finishedPlayers.map(fp => `${fp.player.name}:round${fp.finishRound}:${fp.totalTurns}turns`).join(', '));
+        // Sort by finish round (ascending) - players in same round will be grouped
+        finishedPlayers.sort((a, b) => a.finishRound - b.finishRound);
+        console.log('After sort:', finishedPlayers.map(fp => `${fp.player.name}:round${fp.finishRound}`).join(', '));
 
-        // Assign sequential ranks (no ties - darts is the tie-breaker)
-        finishedPlayers.forEach(({ player }, index) => {
-            player.finish_rank = index + 1;
-            console.log(`  Assigned ${player.name} rank ${index + 1}`);
+        // Assign ranks with ties - players finishing in same round get same rank
+        let currentRank = 1;
+        let lastFinishRound = -1;
+        let playersAtCurrentRank = 0;
+
+        finishedPlayers.forEach(({ player, finishRound }) => {
+            if (finishRound !== lastFinishRound) {
+                // New finish round - advance rank by number of players at previous rank
+                currentRank += playersAtCurrentRank;
+                playersAtCurrentRank = 0;
+                lastFinishRound = finishRound;
+            }
+            player.finish_rank = currentRank;
+            playersAtCurrentRank++;
+            console.log(`  Assigned ${player.name} rank ${currentRank} (round ${finishRound})`);
         });
 
         // Assign rank to any unfinished players (they get ranks after finished players)

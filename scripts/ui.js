@@ -828,7 +828,17 @@ const UI = (() => {
             '180s': '180s'
         }[metric] || 'Wins';
 
-        container.innerHTML = rankings.map((entry, index) => {
+        // Build HTML with chart container first
+        let html = `
+            <div class="leaderboard-chart-section">
+                <div class="chart-container chart-container-leaderboard">
+                    <canvas id="leaderboardChart"></canvas>
+                </div>
+            </div>
+            <div class="leaderboard-entries">
+        `;
+
+        html += rankings.map((entry, index) => {
             const rank = index + 1;
             const rankClass = `rank-${rank}`;
             let metricDisplay = '';
@@ -864,16 +874,73 @@ const UI = (() => {
                 </div>
             `;
         }).join('');
+
+        html += '</div>';
+        container.innerHTML = html;
+
+        // Render leaderboard chart after DOM update
+        setTimeout(() => {
+            Charts.createLeaderboardChart('leaderboardChart', rankings, metric);
+        }, 50);
     }
 
     /**
-     * Render player profile
+     * Render player profile with charts
      */
     async function renderPlayerProfile(playerName) {
-        const stats = await Stats.calculatePlayerStats(playerName);
         const content = document.getElementById('player-profile-content');
 
+        // Show loading state
+        content.innerHTML = '<div class="loading-charts"><p>Loading stats...</p></div>';
+
+        // Fetch all data in parallel for better performance
+        const [stats, scoreDistribution, recentPerformance] = await Promise.all([
+            Stats.calculatePlayerStats(playerName),
+            Stats.getScoreDistribution(playerName),
+            Stats.getRecentPerformance(playerName, 10)
+        ]);
+
         let html = `
+            <!-- Charts Section -->
+            <div class="profile-charts-grid">
+                <!-- Win/Loss Chart -->
+                <div class="chart-card">
+                    <h3>Win/Loss Record</h3>
+                    <div class="chart-container chart-container-small">
+                        <canvas id="winLossChart"></canvas>
+                    </div>
+                    <div class="chart-summary">
+                        <span class="chart-stat wins">${stats.gamesWon} Wins</span>
+                        <span class="chart-stat losses">${stats.gamesPlayed - stats.gamesWon} Losses</span>
+                    </div>
+                </div>
+
+                <!-- Stats Radar Chart -->
+                <div class="chart-card">
+                    <h3>Performance Overview</h3>
+                    <div class="chart-container chart-container-small">
+                        <canvas id="statsRadarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Trend Chart (Full Width) -->
+            <div class="chart-card chart-card-wide">
+                <h3>Performance Trend (Last 10 Games)</h3>
+                <div class="chart-container chart-container-line">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Score Distribution Chart -->
+            <div class="chart-card chart-card-wide">
+                <h3>Turn Score Distribution</h3>
+                <div class="chart-container chart-container-bar">
+                    <canvas id="scoreDistributionChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Stats Grid -->
             <div class="profile-section">
                 <h3>Overall Stats</h3>
                 <div class="stats-matrix">
@@ -933,10 +1000,14 @@ const UI = (() => {
             </div>
         `;
 
+        // Head-to-Head section with chart
         if (Object.keys(stats.headToHead).length > 0) {
             html += `
                 <div class="profile-section">
                     <h3>Head-to-Head Records</h3>
+                    <div class="chart-container chart-container-h2h">
+                        <canvas id="headToHeadChart"></canvas>
+                    </div>
                     <div class="head-to-head-list">
                         ${Object.entries(stats.headToHead).map(([opponent, record]) => {
                             const total = record.wins + record.losses;
@@ -957,6 +1028,30 @@ const UI = (() => {
 
         document.getElementById('profile-player-name').textContent = `${playerName}'s Profile`;
         content.innerHTML = html;
+
+        // Render charts after DOM is updated
+        setTimeout(() => {
+            // Win/Loss Doughnut Chart
+            Charts.createWinLossChart(
+                'winLossChart',
+                stats.gamesWon,
+                stats.gamesPlayed - stats.gamesWon
+            );
+
+            // Stats Radar Chart
+            Charts.createStatsRadarChart('statsRadarChart', stats);
+
+            // Performance Trend Line Chart
+            Charts.createPerformanceChart('performanceChart', recentPerformance);
+
+            // Score Distribution Bar Chart
+            Charts.createScoreDistributionChart('scoreDistributionChart', scoreDistribution);
+
+            // Head-to-Head Chart (if data exists)
+            if (Object.keys(stats.headToHead).length > 0) {
+                Charts.createHeadToHeadChart('headToHeadChart', stats.headToHead);
+            }
+        }, 50);
     }
 
     /**

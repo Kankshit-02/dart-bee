@@ -391,10 +391,10 @@ const Stats = (() => {
                 .select('*', { count: 'exact', head: true })
                 .gt('total_games_played', 0),
 
-            // Top player by average per dart
+            // Top player by average per turn
             getSupabaseClient()
                 .from('player_leaderboard')
-                .select('name, avg_per_dart, rank_by_avg')
+                .select('name, avg_per_turn, rank_by_avg')
                 .order('rank_by_avg', { ascending: true })
                 .limit(1)
                 .single()
@@ -404,8 +404,8 @@ const Stats = (() => {
             totalGames: gamesResult.count || 0,
             totalPlayers: playersResult.count || 0,
             topPlayer: topPlayerResult.data?.name || null,
-            highestAvg: topPlayerResult.data?.avg_per_dart
-                ? parseFloat(topPlayerResult.data.avg_per_dart).toFixed(2)
+            highestAvg: topPlayerResult.data?.avg_per_turn
+                ? parseFloat(topPlayerResult.data.avg_per_turn).toFixed(2)
                 : '0.00'
         };
     }
@@ -631,7 +631,7 @@ const Stats = (() => {
                 totalGames += p.total_games_played || 0;
                 totalWins += p.total_games_won || 0;
 
-                const avg = parseFloat(p.avg_per_dart) || 0;
+                const avg = parseFloat(p.avg_per_turn) || 0;
                 if (avg > highestAvg) {
                     highestAvg = avg;
                     highestAvgPlayer = p.name;

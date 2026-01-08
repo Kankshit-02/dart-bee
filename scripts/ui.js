@@ -146,6 +146,7 @@ const UI = (() => {
                     const date = new Date(game.created_at);
                     const dateStr = date.toLocaleDateString();
                     const totalTurns = game.players.reduce((sum, p) => sum + p.turns.length, 0);
+                    const isOwner = Device.isGameOwner(game.device_id);
 
                     html += `
                         <div class="game-card interrupted-card">
@@ -153,7 +154,7 @@ const UI = (() => {
                                 <div class="game-card-title">${game.game_type} Points</div>
                                 <div style="display: flex; gap: 8px; align-items: center;">
                                     <div class="game-card-date">${dateStr}</div>
-                                    <span class="game-status-badge" style="background: #ff9800; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">IN PROGRESS</span>
+                                    <span class="game-status-badge" style="background: ${isOwner ? '#ff9800' : '#4caf50'}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">${isOwner ? 'IN PROGRESS' : 'LIVE'}</span>
                                 </div>
                             </div>
                             <div class="game-card-players">
@@ -170,8 +171,8 @@ const UI = (() => {
                                 <span>Turn ${totalTurns} • Now: ${currentPlayer?.name || 'N/A'}</span>
                                 <span class="game-type-badge">${game.players.length} players</span>
                             </div>
-                            <button class="btn btn-primary btn-small" onclick="Router.navigate('game', {gameId: '${game.id}'})" style="width: 100%; margin-top: 8px;">
-                                ▶️ Resume Game
+                            <button class="btn ${isOwner ? 'btn-primary' : 'btn-success'} btn-small" onclick="Router.navigate('game', {gameId: '${game.id}'})" style="width: 100%; margin-top: 8px;">
+                                ${isOwner ? '▶️ Resume Game' : '📺 Watch Live'}
                             </button>
                         </div>
                     `;

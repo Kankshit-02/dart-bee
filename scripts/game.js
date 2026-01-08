@@ -181,8 +181,8 @@ const Game = (() => {
                 }
             }
 
-            // Count active players after current finish
-            let activePlayersRemaining = activePlayers - 1;
+            // activePlayers already excludes current player (who now has winner=true)
+            let activePlayersRemaining = activePlayers;
 
             // Move to next active player (skip all finished players)
             let searchIndex = (game.current_player_index + 1) % game.players.length;
@@ -256,6 +256,32 @@ const Game = (() => {
         }
 
         game.current_turn++;
+
+        // Check if this player is the last one and all others have finished
+        // If so, they've had their chance in this round - end the game
+        const activePlayers = game.players.filter(p => !p.winner);
+        if (activePlayers.length === 1) {
+            // Get the highest finish_round from finished players
+            const finishedPlayers = game.players.filter(p => p.finish_round != null);
+            if (finishedPlayers.length > 0) {
+                const maxFinishRound = Math.max(...finishedPlayers.map(p => p.finish_round));
+                const currentRound = Math.floor((game.current_turn - 1) / game.players.length);
+
+                // If current player has had their turn in the round where others finished, end game
+                if (currentRound >= maxFinishRound) {
+                    // Last player didn't finish but had their chance
+                    assignRankingsByFinishTurn(game);
+                    endGame(game);
+                    const finalRankings = getRankings(game);
+
+                    return {
+                        success: true,
+                        gameEnded: true,
+                        finalRankings: finalRankings
+                    };
+                }
+            }
+        }
 
         return { success: true, gameEnded: false, nextPlayer: game.players[game.current_player_index].name };
     }

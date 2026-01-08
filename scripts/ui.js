@@ -476,6 +476,17 @@ const UI = (() => {
      */
     function renderCurrentPlayer(game) {
         const player = Game.getCurrentPlayer(game);
+
+        // Handle completed games or invalid player index
+        if (!player) {
+            const winner = game.players.find(p => p.winner);
+            document.getElementById('current-player-name').textContent = winner
+                ? `${winner.name} Wins!`
+                : 'Game Complete';
+            document.getElementById('game-title').textContent = `${game.game_type} - Finished`;
+            return;
+        }
+
         document.getElementById('current-player-name').textContent = `${player.name}'s Turn`;
         document.getElementById('game-title').textContent = `${game.game_type} - Turn ${game.current_turn + 1}`;
     }
@@ -824,8 +835,8 @@ const UI = (() => {
         const metricLabel = {
             'wins': 'Wins',
             'win-rate': 'Win Rate',
-            'avg-dart': 'Avg/Dart',
-            '180s': '180s'
+            'avg-dart': 'Avg/Turn',
+            'max-turn': 'Top Turn'
         }[metric] || 'Wins';
 
         // Build HTML with chart container first
@@ -851,10 +862,10 @@ const UI = (() => {
                     metricDisplay = `${entry.stats.winRate}%`;
                     break;
                 case 'avg-dart':
-                    metricDisplay = entry.stats.avgPerDart;
+                    metricDisplay = entry.stats.avgPerTurn || entry.stats.avgPerDart;
                     break;
-                case '180s':
-                    metricDisplay = entry.stats.total180s;
+                case 'max-turn':
+                    metricDisplay = entry.stats.maxTurn || entry.fullStats?.maxTurn || 0;
                     break;
             }
 

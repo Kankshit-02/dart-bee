@@ -1093,12 +1093,13 @@ const UI = (() => {
             dartEntrySection.style.display = 'none';
         }
 
-        // Show spectator indicator
+        // Show spectator indicator (only add once)
         const pageHeader = document.querySelector('.page-header');
-        if (pageHeader) {
+        if (pageHeader && !document.getElementById('spectator-indicator')) {
             const spectatorIndicator = document.createElement('div');
-            spectatorIndicator.style.cssText = 'color: #7d5f92; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(125, 95, 146, 0.1); border-radius: 6px; display: inline-block; margin-left: 16px;';
-            spectatorIndicator.textContent = '📺 Spectator Mode (Read-Only)';
+            spectatorIndicator.id = 'spectator-indicator';
+            spectatorIndicator.style.cssText = 'display: flex; align-items: center; gap: 8px; color: #7d5f92; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(125, 95, 146, 0.1); border-radius: 6px; margin-left: 16px;';
+            spectatorIndicator.innerHTML = '<span id="live-indicator" style="display: none;">🔴</span> 📺 Spectator Mode';
             pageHeader.appendChild(spectatorIndicator);
         }
 
@@ -1108,6 +1109,17 @@ const UI = (() => {
 
         // Show spectator-specific leaderboard with player stats from current game
         renderSpectatorLeaderboard(game);
+    }
+
+    /**
+     * Show/hide live indicator for spectator mode
+     */
+    function showLiveIndicator(isLive) {
+        const indicator = document.getElementById('live-indicator');
+        if (indicator) {
+            indicator.style.display = isLive ? 'inline' : 'none';
+            indicator.title = isLive ? 'Connected - Live updates enabled' : 'Disconnected';
+        }
     }
 
     /**
@@ -1701,6 +1713,7 @@ const UI = (() => {
         updateActiveGameUI,
         renderSpectatorGame,
         updateWinnersBoard,
+        showLiveIndicator,
         getPaginationState: () => paginationState,
         renderStatsPage,
         renderPlayerStatsWidgets,

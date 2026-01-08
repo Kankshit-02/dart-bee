@@ -443,6 +443,13 @@ const Storage = (() => {
                 }
             }
 
+            // IMPORTANT: Update game_players BEFORE setting completed_at
+            // The trigger on games.completed_at reads from game_players to update player aggregates
+            // If we update completed_at first, the trigger reads stale/zero values
+            if (updates.players) {
+                await updateGamePlayers(gameId, updates.players);
+            }
+
             const { data, error } = await sb
                 .from('games')
                 .update(gameUpdates)
@@ -452,11 +459,6 @@ const Storage = (() => {
             if (error) {
                 console.error('Error updating game:', error);
                 throw error;
-            }
-
-            // If game has player/turn updates, update those tables too
-            if (updates.players) {
-                await updateGamePlayers(gameId, updates.players);
             }
 
             return data ? data[0] : null;

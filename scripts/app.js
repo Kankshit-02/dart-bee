@@ -7,6 +7,7 @@ const App = (() => {
     let currentGame = null;
     let isSpectatorMode = false;
     let isOperationInProgress = false;
+    let spectatorSubscription = null;
 
     /**
      * Check if an operation is in progress
@@ -48,6 +49,12 @@ const App = (() => {
      */
     async function handleRoute(routeInfo) {
         console.log('Handling route:', routeInfo);
+
+        // Clean up spectator subscription when navigating away
+        if (isSpectatorMode && routeInfo.route !== 'game') {
+            unsubscribeFromGameUpdates();
+            isSpectatorMode = false;
+        }
 
         try {
             switch (routeInfo.route) {
@@ -364,12 +371,99 @@ const App = (() => {
     }
 
     /**
-     * Load game in spectator mode (read-only)
+     * Load game in spectator mode (read-only) with live updates
      */
-    function loadSpectatorGame() {
+    async function loadSpectatorGame() {
         if (!currentGame) return;
         UI.showPage('active-game-page');
         UI.renderSpectatorGame(currentGame);
+
+        // Subscribe to real-time updates
+        await subscribeToGameUpdates(currentGame.id);
+    }
+
+    /**
+     * Subscribe to real-time game updates for spectator mode
+     */
+    async function subscribeToGameUpdates(gameId) {
+        // Clean up any existing subscription
+        unsubscribeFromGameUpdates();
+
+        const supabase = Storage.sb;
+        if (!supabase) {
+            console.warn('Supabase not available for real-time updates');
+            return;
+        }
+
+        spectatorSubscription = supabase
+            .channel(`spectator:${gameId}`)
+            .on('postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'games',
+                    filter: `id=eq.${gameId}`
+                },
+                async (payload) => {
+                    console.log('Game updated (spectator):', payload);
+                    // Reload the full game to get player data
+                    const updatedGame = await Storage.getGame(gameId);
+                    if (updatedGame) {
+                        currentGame = updatedGame;
+                        UI.renderSpectatorGame(currentGame);
+                    }
+                }
+            )
+            .on('postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'game_players',
+                    filter: `game_id=eq.${gameId}`
+                },
+                async () => {
+                    // Player stats updated, reload game
+                    const updatedGame = await Storage.getGame(gameId);
+                    if (updatedGame) {
+                        currentGame = updatedGame;
+                        UI.renderSpectatorGame(currentGame);
+                    }
+                }
+            )
+            .on('postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'turns'
+                },
+                async () => {
+                    // New turn added, reload game
+                    const updatedGame = await Storage.getGame(gameId);
+                    if (updatedGame) {
+                        currentGame = updatedGame;
+                        UI.renderSpectatorGame(currentGame);
+                    }
+                }
+            )
+            .subscribe((status) => {
+                console.log('Spectator subscription status:', status);
+                if (status === 'SUBSCRIBED') {
+                    UI.showLiveIndicator(true);
+                } else if (status === 'CHANNEL_ERROR') {
+                    UI.showLiveIndicator(false);
+                }
+            });
+    }
+
+    /**
+     * Unsubscribe from game updates
+     */
+    function unsubscribeFromGameUpdates() {
+        if (spectatorSubscription) {
+            Storage.sb?.removeChannel(spectatorSubscription);
+            spectatorSubscription = null;
+            UI.showLiveIndicator(false);
+        }
     }
 
     /**
@@ -662,9 +756,9 @@ const App = (() => {
     function shareGame() {
         if (!currentGame) return;
 
-        // Generate spectator link (will use spectator.html once created)
-        const baseUrl = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
-        const shareUrl = `${baseUrl}/spectator.html?game=${currentGame.id}`;
+        // Generate spectator link using main app route
+        const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
+        const shareUrl = `${baseUrl}#game/${currentGame.id}`;
 
         // Copy to clipboard
         navigator.clipboard.writeText(shareUrl).then(() => {

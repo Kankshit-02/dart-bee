@@ -7,6 +7,8 @@ const App = (() => {
     let currentGame = null;
     let isSpectatorMode = false;
     let isOperationInProgress = false;
+    let spectatorSubscription = null;
+    let homeSubscription = null;
 
     /**
      * Check if an operation is in progress
@@ -43,6 +45,7 @@ const App = (() => {
         setupGameEvents();
         setupHistoryEvents();
         setupLeaderboardEvents();
+        setupStatsEvents();
         setupModalEvents();
         setupCompetitionEvents();
     }
@@ -52,6 +55,15 @@ const App = (() => {
      */
     async function handleRoute(routeInfo) {
         console.log('Handling route:', routeInfo);
+
+        // Clean up subscriptions when navigating away
+        if (isSpectatorMode && routeInfo.route !== 'game') {
+            unsubscribeFromGameUpdates();
+            isSpectatorMode = false;
+        }
+        if (routeInfo.route !== 'home') {
+            unsubscribeFromHomeUpdates();
+        }
 
         try {
             switch (routeInfo.route) {
@@ -76,7 +88,7 @@ const App = (() => {
                     break;
 
                 case 'leaderboard':
-                    await loadLeaderboard();
+                    await loadLeaderboard(routeInfo.metric, routeInfo.filter);
                     break;
 
                 case 'player-profile':
@@ -102,6 +114,10 @@ const App = (() => {
 
                 case 'league':
                     await loadLeague(routeInfo.leagueId);
+                    break;
+
+                case 'stats':
+                    await loadStats();
                     break;
 
                 default:
@@ -186,6 +202,9 @@ const App = (() => {
                         break;
                     case 'competitions':
                         Router.navigate('competitions');
+                        break;
+                    case 'stats':
+                        Router.navigate('stats');
                         break;
                 }
             });
@@ -313,32 +332,32 @@ const App = (() => {
      * Setup leaderboard events
      */
     function setupLeaderboardEvents() {
-        // Time filters
+        // Time filters - navigate to update URL
         document.querySelectorAll('.time-filters .filter-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                document.querySelectorAll('.time-filters .filter-btn').forEach(b => b.classList.remove('active'));
-                e.target.classList.add('active');
+            btn.addEventListener('click', (e) => {
                 const filter = e.target.dataset.filter;
                 const metric = document.querySelector('.leaderboard-tabs .tab-btn.active').dataset.tab;
-                await UI.renderLeaderboard(metric, filter);
+                Router.navigate('leaderboard', { metric, filter });
             });
         });
 
-        // Metric tabs
+        // Metric tabs - navigate to update URL
         document.querySelectorAll('.leaderboard-tabs .tab-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                document.querySelectorAll('.leaderboard-tabs .tab-btn').forEach(b => b.classList.remove('active'));
-                e.target.classList.add('active');
+            btn.addEventListener('click', (e) => {
                 const metric = e.target.dataset.tab;
                 const filter = document.querySelector('.time-filters .filter-btn.active').dataset.filter;
-                await UI.renderLeaderboard(metric, filter);
+                Router.navigate('leaderboard', { metric, filter });
             });
         });
 
-        // Back to leaderboard from profile
+        // Back to leaderboard from profile - preserve current tab state
         const backBtn = document.getElementById('back-to-leaderboard');
         if (backBtn) {
-            backBtn.addEventListener('click', loadLeaderboard);
+            backBtn.addEventListener('click', () => {
+                const metric = document.querySelector('.leaderboard-tabs .tab-btn.active')?.dataset.tab || 'wins';
+                const filter = document.querySelector('.time-filters .filter-btn.active')?.dataset.filter || 'all-time';
+                Router.navigate('leaderboard', { metric, filter });
+            });
         }
     }
 
@@ -362,11 +381,72 @@ const App = (() => {
         try {
             UI.showPage('home-page');
             await UI.renderRecentGames();
+            // Subscribe to live updates for active games
+            subscribeToHomeUpdates();
         } catch (error) {
             console.error('Error loading home:', error);
             UI.showToast('Failed to load dashboard', 'error');
         } finally {
             UI.hideLoader();
+        }
+    }
+
+    /**
+     * Subscribe to real-time updates for home page (active games)
+     */
+    function subscribeToHomeUpdates() {
+        unsubscribeFromHomeUpdates();
+
+        const supabase = Storage.sb;
+        if (!supabase) return;
+
+        homeSubscription = supabase
+            .channel('home-games')
+            .on('postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'games'
+                },
+                async () => {
+                    console.log('Games table updated, refreshing home...');
+                    await UI.renderRecentGames();
+                }
+            )
+            .on('postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'game_players'
+                },
+                async () => {
+                    console.log('Game players updated, refreshing home...');
+                    await UI.renderRecentGames();
+                }
+            )
+            .on('postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'turns'
+                },
+                async () => {
+                    console.log('New turn added, refreshing home...');
+                    await UI.renderRecentGames();
+                }
+            )
+            .subscribe((status) => {
+                console.log('Home subscription status:', status);
+            });
+    }
+
+    /**
+     * Unsubscribe from home updates
+     */
+    function unsubscribeFromHomeUpdates() {
+        if (homeSubscription) {
+            Storage.sb?.removeChannel(homeSubscription);
+            homeSubscription = null;
         }
     }
 
@@ -388,12 +468,99 @@ const App = (() => {
     }
 
     /**
-     * Load game in spectator mode (read-only)
+     * Load game in spectator mode (read-only) with live updates
      */
-    function loadSpectatorGame() {
+    async function loadSpectatorGame() {
         if (!currentGame) return;
         UI.showPage('active-game-page');
         UI.renderSpectatorGame(currentGame);
+
+        // Subscribe to real-time updates
+        await subscribeToGameUpdates(currentGame.id);
+    }
+
+    /**
+     * Subscribe to real-time game updates for spectator mode
+     */
+    async function subscribeToGameUpdates(gameId) {
+        // Clean up any existing subscription
+        unsubscribeFromGameUpdates();
+
+        const supabase = Storage.sb;
+        if (!supabase) {
+            console.warn('Supabase not available for real-time updates');
+            return;
+        }
+
+        spectatorSubscription = supabase
+            .channel(`spectator:${gameId}`)
+            .on('postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'games',
+                    filter: `id=eq.${gameId}`
+                },
+                async (payload) => {
+                    console.log('Game updated (spectator):', payload);
+                    // Reload the full game to get player data
+                    const updatedGame = await Storage.getGame(gameId);
+                    if (updatedGame) {
+                        currentGame = updatedGame;
+                        UI.renderSpectatorGame(currentGame);
+                    }
+                }
+            )
+            .on('postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'game_players',
+                    filter: `game_id=eq.${gameId}`
+                },
+                async () => {
+                    // Player stats updated, reload game
+                    const updatedGame = await Storage.getGame(gameId);
+                    if (updatedGame) {
+                        currentGame = updatedGame;
+                        UI.renderSpectatorGame(currentGame);
+                    }
+                }
+            )
+            .on('postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'turns'
+                },
+                async () => {
+                    // New turn added, reload game
+                    const updatedGame = await Storage.getGame(gameId);
+                    if (updatedGame) {
+                        currentGame = updatedGame;
+                        UI.renderSpectatorGame(currentGame);
+                    }
+                }
+            )
+            .subscribe((status) => {
+                console.log('Spectator subscription status:', status);
+                if (status === 'SUBSCRIBED') {
+                    UI.showLiveIndicator(true);
+                } else if (status === 'CHANNEL_ERROR') {
+                    UI.showLiveIndicator(false);
+                }
+            });
+    }
+
+    /**
+     * Unsubscribe from game updates
+     */
+    function unsubscribeFromGameUpdates() {
+        if (spectatorSubscription) {
+            Storage.sb?.removeChannel(spectatorSubscription);
+            spectatorSubscription = null;
+            UI.showLiveIndicator(false);
+        }
     }
 
     /**
@@ -410,12 +577,67 @@ const App = (() => {
     /**
      * Load leaderboard page
      */
-    async function loadLeaderboard() {
+    async function loadLeaderboard(metric = 'wins', filter = 'all-time') {
         const profilePage = document.getElementById('player-profile-page');
         profilePage.classList.add('hidden');
         document.getElementById('leaderboard-page').classList.remove('hidden');
         UI.showPage('leaderboard-page');
-        await UI.renderLeaderboard('wins', 'all-time');
+
+        // Update active states for tabs based on URL params
+        document.querySelectorAll('.leaderboard-tabs .tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === metric);
+        });
+        document.querySelectorAll('.time-filters .filter-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.filter === filter);
+        });
+
+        await UI.renderLeaderboard(metric, filter);
+    }
+
+    /**
+     * Load stats page
+     */
+    async function loadStats() {
+        UI.showPage('stats-page');
+        await UI.renderStatsPage();
+    }
+
+    /**
+     * Setup stats page events
+     */
+    function setupStatsEvents() {
+        // Player selector change
+        const playerSelect = document.getElementById('stats-player-select');
+        if (playerSelect) {
+            playerSelect.addEventListener('change', async (e) => {
+                const playerName = e.target.value;
+                await UI.renderPlayerStatsWidgets(playerName);
+            });
+        }
+
+        // Compare players button
+        const compareBtn = document.getElementById('compare-players-btn');
+        if (compareBtn) {
+            compareBtn.addEventListener('click', () => {
+                UI.openComparisonModal();
+            });
+        }
+
+        // Run comparison button
+        const runCompareBtn = document.getElementById('run-comparison-btn');
+        if (runCompareBtn) {
+            runCompareBtn.addEventListener('click', () => {
+                UI.runPlayerComparison();
+            });
+        }
+
+        // Listen for preferences changes
+        document.addEventListener('statsPreferencesChanged', async (e) => {
+            const playerSelect = document.getElementById('stats-player-select');
+            if (playerSelect && playerSelect.value) {
+                await UI.renderPlayerStatsWidgets(playerSelect.value);
+            }
+        });
     }
 
     /**
@@ -577,7 +799,7 @@ const App = (() => {
                     <span class="rank-medal">${medal}</span>
                     <span class="rank-position">${position}${suffix}</span>
                     <span class="rank-name">${player.name}</span>
-                    <span class="rank-stats">${player.darts} darts • ${parseFloat(player.avgPerDart).toFixed(1)} avg</span>
+                    <span class="rank-stats">${player.turns} turns • ${parseFloat(player.avgPerTurn || player.avgPerDart).toFixed(1)} avg</span>
                 </div>
             `;
         });
@@ -631,9 +853,9 @@ const App = (() => {
     function shareGame() {
         if (!currentGame) return;
 
-        // Generate spectator link (will use spectator.html once created)
-        const baseUrl = window.location.origin + window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
-        const shareUrl = `${baseUrl}/spectator.html?game=${currentGame.id}`;
+        // Generate spectator link using main app route
+        const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
+        const shareUrl = `${baseUrl}#game/${currentGame.id}`;
 
         // Copy to clipboard
         navigator.clipboard.writeText(shareUrl).then(() => {

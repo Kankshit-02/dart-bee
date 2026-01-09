@@ -161,8 +161,9 @@ const UI = (() => {
                                 ${game.players.map(p => {
                                     const playerTurns = p.turns.length;
                                     return `
-                                        <div class="player-badge ${p.name === currentPlayer?.name ? 'current' : ''}">
-                                            ${p.name} (${playerTurns} turn${playerTurns !== 1 ? 's' : ''})
+                                        <div class="player-badge ${p.name === currentPlayer?.name ? 'current' : ''}" style="display: flex; justify-content: space-between; align-items: center;">
+                                            <span>${p.name}</span>
+                                            <span style="font-weight: 700; color: ${p.currentScore <= 50 ? '#4caf50' : 'inherit'};">${p.currentScore}</span>
                                         </div>
                                     `;
                                 }).join('')}
@@ -332,14 +333,25 @@ const UI = (() => {
                 // Handle input for suggestions
                 input.addEventListener('input', (e) => {
                     const value = e.target.value.toLowerCase().trim();
+
+                    // Validate for duplicates whenever input changes
+                    validatePlayerNames();
+
                     if (value.length === 0) {
                         suggestionsList.style.display = 'none';
                         return;
                     }
 
-                    // Filter existing players matching the input
+                    // Get all currently selected player names (excluding this input)
+                    const selectedNames = Array.from(playerNamesContainer.querySelectorAll('.player-name-input'))
+                        .filter(inp => inp !== input)
+                        .map(inp => inp.value.toLowerCase().trim())
+                        .filter(name => name !== '');
+
+                    // Filter existing players matching the input, excluding already selected ones
                     const matches = existingPlayers.filter(player =>
-                        player.toLowerCase().includes(value)
+                        player.toLowerCase().includes(value) &&
+                        !selectedNames.includes(player.toLowerCase())
                     );
 
                     if (matches.length === 0) {
@@ -360,6 +372,7 @@ const UI = (() => {
                         item.addEventListener('click', () => {
                             input.value = item.getAttribute('data-player');
                             suggestionsList.style.display = 'none';
+                            validatePlayerNames();
                         });
                     });
                 });
@@ -369,6 +382,7 @@ const UI = (() => {
                     setTimeout(() => {
                         suggestionsList.style.display = 'none';
                     }, 200);
+                    validatePlayerNames();
                 });
 
                 input.addEventListener('focus', () => {
@@ -381,6 +395,54 @@ const UI = (() => {
                 wrapper.appendChild(input);
                 wrapper.appendChild(suggestionsList);
                 playerNamesContainer.appendChild(wrapper);
+            }
+        }
+
+        // Validate player names for duplicates and enable/disable submit button
+        function validatePlayerNames() {
+            const submitButton = document.querySelector('#new-game-form button[type="submit"]');
+            if (!submitButton) return;
+
+            const playerInputs = Array.from(playerNamesContainer.querySelectorAll('.player-name-input'));
+            const enteredNames = playerInputs
+                .map(input => input.value.trim())
+                .filter(name => name !== '');
+
+            // Check for duplicates (case-insensitive)
+            const normalizedNames = enteredNames.map(name => name.toLowerCase());
+            const hasDuplicates = normalizedNames.length !== new Set(normalizedNames).size;
+
+            // Clear previous error styling
+            playerInputs.forEach(input => {
+                input.style.borderColor = '';
+            });
+
+            if (hasDuplicates) {
+                // Find and highlight duplicates
+                const nameCounts = {};
+                playerInputs.forEach(input => {
+                    const name = input.value.trim().toLowerCase();
+                    if (name !== '') {
+                        nameCounts[name] = (nameCounts[name] || 0) + 1;
+                    }
+                });
+
+                playerInputs.forEach(input => {
+                    const name = input.value.trim().toLowerCase();
+                    if (name !== '' && nameCounts[name] > 1) {
+                        input.style.borderColor = '#f44336';
+                    }
+                });
+
+                submitButton.disabled = true;
+                submitButton.style.opacity = '0.5';
+                submitButton.style.cursor = 'not-allowed';
+                submitButton.title = 'Remove duplicate player names to continue';
+            } else {
+                submitButton.disabled = false;
+                submitButton.style.opacity = '';
+                submitButton.style.cursor = '';
+                submitButton.title = '';
             }
         }
 
@@ -476,6 +538,17 @@ const UI = (() => {
      */
     function renderCurrentPlayer(game) {
         const player = Game.getCurrentPlayer(game);
+
+        // Handle completed games or invalid player index
+        if (!player) {
+            const winner = game.players.find(p => p.winner);
+            document.getElementById('current-player-name').textContent = winner
+                ? `${winner.name} Wins!`
+                : 'Game Complete';
+            document.getElementById('game-title').textContent = `${game.game_type} - Finished`;
+            return;
+        }
+
         document.getElementById('current-player-name').textContent = `${player.name}'s Turn`;
         document.getElementById('game-title').textContent = `${game.game_type} - Turn ${game.current_turn + 1}`;
     }
@@ -769,8 +842,8 @@ const UI = (() => {
                         <span class="detail-standings-name">${p.name}</span>
                         <span class="detail-standings-stats">
                             <span>Score: ${p.score}</span>
-                            <span>Darts: ${p.darts}</span>
-                            <span>Avg: ${p.avgPerDart}</span>
+                            <span>Turns: ${p.turns}</span>
+                            <span>Avg: ${p.avgPerTurn || p.avgPerDart}</span>
                         </span>
                     </div>
                 `;
@@ -824,11 +897,21 @@ const UI = (() => {
         const metricLabel = {
             'wins': 'Wins',
             'win-rate': 'Win Rate',
-            'avg-dart': 'Avg/Dart',
-            '180s': '180s'
+            'avg-turn': 'Avg/Turn',
+            'max-turn': 'Top Turn'
         }[metric] || 'Wins';
 
-        container.innerHTML = rankings.map((entry, index) => {
+        // Build HTML with chart container first
+        let html = `
+            <div class="leaderboard-chart-section">
+                <div class="chart-container chart-container-leaderboard">
+                    <canvas id="leaderboardChart"></canvas>
+                </div>
+            </div>
+            <div class="leaderboard-entries">
+        `;
+
+        html += rankings.map((entry, index) => {
             const rank = index + 1;
             const rankClass = `rank-${rank}`;
             let metricDisplay = '';
@@ -840,11 +923,11 @@ const UI = (() => {
                 case 'win-rate':
                     metricDisplay = `${entry.stats.winRate}%`;
                     break;
-                case 'avg-dart':
-                    metricDisplay = entry.stats.avgPerDart;
+                case 'avg-turn':
+                    metricDisplay = entry.stats.avgPerTurn || entry.stats.avgPerDart || '0.00';
                     break;
-                case '180s':
-                    metricDisplay = entry.stats.total180s;
+                case 'max-turn':
+                    metricDisplay = entry.stats.maxTurn || entry.fullStats?.maxTurn || 0;
                     break;
             }
 
@@ -864,16 +947,73 @@ const UI = (() => {
                 </div>
             `;
         }).join('');
+
+        html += '</div>';
+        container.innerHTML = html;
+
+        // Render leaderboard chart after DOM update
+        setTimeout(() => {
+            Charts.createLeaderboardChart('leaderboardChart', rankings, metric);
+        }, 50);
     }
 
     /**
-     * Render player profile
+     * Render player profile with charts
      */
     async function renderPlayerProfile(playerName) {
-        const stats = await Stats.calculatePlayerStats(playerName);
         const content = document.getElementById('player-profile-content');
 
+        // Show loading state
+        content.innerHTML = '<div class="loading-charts"><p>Loading stats...</p></div>';
+
+        // Fetch all data in parallel for better performance
+        const [stats, scoreDistribution, recentPerformance] = await Promise.all([
+            Stats.calculatePlayerStats(playerName),
+            Stats.getScoreDistribution(playerName),
+            Stats.getRecentPerformance(playerName, 10)
+        ]);
+
         let html = `
+            <!-- Charts Section -->
+            <div class="profile-charts-grid">
+                <!-- Win/Loss Chart -->
+                <div class="chart-card">
+                    <h3>Win/Loss Record</h3>
+                    <div class="chart-container chart-container-small">
+                        <canvas id="winLossChart"></canvas>
+                    </div>
+                    <div class="chart-summary">
+                        <span class="chart-stat wins">${stats.gamesWon} Wins</span>
+                        <span class="chart-stat losses">${stats.gamesPlayed - stats.gamesWon} Losses</span>
+                    </div>
+                </div>
+
+                <!-- Stats Radar Chart -->
+                <div class="chart-card">
+                    <h3>Performance Overview</h3>
+                    <div class="chart-container chart-container-small">
+                        <canvas id="statsRadarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Trend Chart (Full Width) -->
+            <div class="chart-card chart-card-wide">
+                <h3>Performance Trend (Last 10 Games)</h3>
+                <div class="chart-container chart-container-line">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Score Distribution Chart -->
+            <div class="chart-card chart-card-wide">
+                <h3>Turn Score Distribution</h3>
+                <div class="chart-container chart-container-bar">
+                    <canvas id="scoreDistributionChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Stats Grid -->
             <div class="profile-section">
                 <h3>Overall Stats</h3>
                 <div class="stats-matrix">
@@ -890,8 +1030,8 @@ const UI = (() => {
                         <div class="stat-box-value">${stats.winRate}%</div>
                     </div>
                     <div class="stat-box">
-                        <div class="stat-box-label">Avg/Dart</div>
-                        <div class="stat-box-value">${stats.avgPerDart}</div>
+                        <div class="stat-box-label">Avg/Turn</div>
+                        <div class="stat-box-value">${stats.avgPerTurn || stats.avgPerDart}</div>
                     </div>
                 </div>
             </div>
@@ -933,10 +1073,14 @@ const UI = (() => {
             </div>
         `;
 
+        // Head-to-Head section with chart
         if (Object.keys(stats.headToHead).length > 0) {
             html += `
                 <div class="profile-section">
                     <h3>Head-to-Head Records</h3>
+                    <div class="chart-container chart-container-h2h">
+                        <canvas id="headToHeadChart"></canvas>
+                    </div>
                     <div class="head-to-head-list">
                         ${Object.entries(stats.headToHead).map(([opponent, record]) => {
                             const total = record.wins + record.losses;
@@ -957,6 +1101,30 @@ const UI = (() => {
 
         document.getElementById('profile-player-name').textContent = `${playerName}'s Profile`;
         content.innerHTML = html;
+
+        // Render charts after DOM is updated
+        setTimeout(() => {
+            // Win/Loss Doughnut Chart
+            Charts.createWinLossChart(
+                'winLossChart',
+                stats.gamesWon,
+                stats.gamesPlayed - stats.gamesWon
+            );
+
+            // Stats Radar Chart
+            Charts.createStatsRadarChart('statsRadarChart', stats);
+
+            // Performance Trend Line Chart
+            Charts.createPerformanceChart('performanceChart', recentPerformance);
+
+            // Score Distribution Bar Chart
+            Charts.createScoreDistributionChart('scoreDistributionChart', scoreDistribution);
+
+            // Head-to-Head Chart (if data exists)
+            if (Object.keys(stats.headToHead).length > 0) {
+                Charts.createHeadToHeadChart('headToHeadChart', stats.headToHead);
+            }
+        }, 50);
     }
 
     /**
@@ -987,12 +1155,13 @@ const UI = (() => {
             dartEntrySection.style.display = 'none';
         }
 
-        // Show spectator indicator
+        // Show spectator indicator (only add once)
         const pageHeader = document.querySelector('.page-header');
-        if (pageHeader) {
+        if (pageHeader && !document.getElementById('spectator-indicator')) {
             const spectatorIndicator = document.createElement('div');
-            spectatorIndicator.style.cssText = 'color: #7d5f92; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(125, 95, 146, 0.1); border-radius: 6px; display: inline-block; margin-left: 16px;';
-            spectatorIndicator.textContent = '📺 Spectator Mode (Read-Only)';
+            spectatorIndicator.id = 'spectator-indicator';
+            spectatorIndicator.style.cssText = 'display: flex; align-items: center; gap: 8px; color: #7d5f92; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(125, 95, 146, 0.1); border-radius: 6px; margin-left: 16px;';
+            spectatorIndicator.innerHTML = '<span id="live-indicator" style="display: none;">🔴</span> 📺 Spectator Mode';
             pageHeader.appendChild(spectatorIndicator);
         }
 
@@ -1002,6 +1171,17 @@ const UI = (() => {
 
         // Show spectator-specific leaderboard with player stats from current game
         renderSpectatorLeaderboard(game);
+    }
+
+    /**
+     * Show/hide live indicator for spectator mode
+     */
+    function showLiveIndicator(isLive) {
+        const indicator = document.getElementById('live-indicator');
+        if (indicator) {
+            indicator.style.display = isLive ? 'inline' : 'none';
+            indicator.title = isLive ? 'Connected - Live updates enabled' : 'Disconnected';
+        }
     }
 
     /**
@@ -1256,6 +1436,320 @@ const UI = (() => {
                 });
             }, 300);
         }
+    }
+
+    /**
+     * Render the global stats page
+     */
+    async function renderStatsPage() {
+        const summaryContainer = document.getElementById('global-stats-summary');
+        const widgetsContainer = document.getElementById('player-stats-widgets');
+        const playerSelect = document.getElementById('stats-player-select');
+
+        // Show loading
+        summaryContainer.innerHTML = '<div class="loading-charts"><p>Loading statistics...</p></div>';
+        widgetsContainer.innerHTML = '';
+
+        // Get global stats and player names
+        const [globalStats, playerNames] = await Promise.all([
+            Stats.getGlobalStats(),
+            Stats.getAllPlayerNames()
+        ]);
+
+        // Populate player dropdown
+        playerSelect.innerHTML = '<option value="">-- Select Player --</option>' +
+            playerNames.map(name => `<option value="${name}">${name}</option>`).join('');
+
+        // Also populate comparison dropdowns
+        const compareSelect1 = document.getElementById('compare-player-1');
+        const compareSelect2 = document.getElementById('compare-player-2');
+        if (compareSelect1 && compareSelect2) {
+            const options = '<option value="">Select Player</option>' +
+                playerNames.map(name => `<option value="${name}">${name}</option>`).join('');
+            compareSelect1.innerHTML = options;
+            compareSelect2.innerHTML = options;
+        }
+
+        // Render global stats summary with animated counters
+        const counters = [];
+
+        let html = `
+            <!-- Global Stats Cards -->
+            <div class="global-stats-grid">
+                <div class="global-stat-card">
+                    <div class="global-stat-icon">🎮</div>
+                    <div class="global-stat-content">
+                        <div class="global-stat-value" id="counter-games">${globalStats.totalGames}</div>
+                        <div class="global-stat-label">Total Games</div>
+                    </div>
+                </div>
+                <div class="global-stat-card">
+                    <div class="global-stat-icon">👥</div>
+                    <div class="global-stat-content">
+                        <div class="global-stat-value" id="counter-players">${globalStats.totalPlayers}</div>
+                        <div class="global-stat-label">Active Players</div>
+                    </div>
+                </div>
+                <div class="global-stat-card">
+                    <div class="global-stat-icon">🎯</div>
+                    <div class="global-stat-content">
+                        <div class="global-stat-value" id="counter-darts">${globalStats.totalDarts.toLocaleString()}</div>
+                        <div class="global-stat-label">Darts Thrown</div>
+                    </div>
+                </div>
+                <div class="global-stat-card">
+                    <div class="global-stat-icon">📊</div>
+                    <div class="global-stat-content">
+                        <div class="global-stat-value" id="counter-score">${globalStats.totalScore.toLocaleString()}</div>
+                        <div class="global-stat-label">Total Points</div>
+                    </div>
+                </div>
+                <div class="global-stat-card highlight">
+                    <div class="global-stat-icon">🔥</div>
+                    <div class="global-stat-content">
+                        <div class="global-stat-value" id="counter-180s">${globalStats.total180s}</div>
+                        <div class="global-stat-label">Total 180s</div>
+                    </div>
+                </div>
+                <div class="global-stat-card">
+                    <div class="global-stat-icon">⚡</div>
+                    <div class="global-stat-content">
+                        <div class="global-stat-value" id="counter-140s">${globalStats.total140plus}</div>
+                        <div class="global-stat-label">140+ Turns</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Records Section -->
+            <div class="records-section">
+                <h3>🏅 All-Time Records</h3>
+                <div class="records-grid">
+                    <div class="record-card">
+                        <div class="record-icon">📈</div>
+                        <div class="record-content">
+                            <div class="record-value">${globalStats.records.highestAvg || '0.00'}</div>
+                            <div class="record-label">Best Avg/Turn</div>
+                            <div class="record-holder">${globalStats.records.highestAvgPlayer || 'N/A'}</div>
+                        </div>
+                    </div>
+                    <div class="record-card">
+                        <div class="record-icon">🎯</div>
+                        <div class="record-content">
+                            <div class="record-value">${globalStats.records.most180s || 0}</div>
+                            <div class="record-label">Most 180s</div>
+                            <div class="record-holder">${globalStats.records.most180sPlayer || 'N/A'}</div>
+                        </div>
+                    </div>
+                    <div class="record-card">
+                        <div class="record-icon">💥</div>
+                        <div class="record-content">
+                            <div class="record-value">${globalStats.records.highestMaxTurn || 0}</div>
+                            <div class="record-label">Highest Turn</div>
+                            <div class="record-holder">${globalStats.records.highestMaxTurnPlayer || 'N/A'}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fun Facts Section -->
+            <div class="fun-facts-section">
+                <h3>📊 Fun Facts</h3>
+                <div class="fun-facts-grid">
+                    <div class="fun-fact">
+                        <span class="fun-fact-value">${globalStats.averagePerDart}</span>
+                        <span class="fun-fact-label">Global Avg per Dart</span>
+                    </div>
+                    <div class="fun-fact">
+                        <span class="fun-fact-value">${globalStats.totalDarts > 0 ? Math.round(globalStats.totalDarts / Math.max(globalStats.totalGames, 1)) : 0}</span>
+                        <span class="fun-fact-label">Avg Darts per Game</span>
+                    </div>
+                    <div class="fun-fact">
+                        <span class="fun-fact-value">${globalStats.totalGames > 0 ? (globalStats.total180s / globalStats.totalGames).toFixed(2) : 0}</span>
+                        <span class="fun-fact-label">180s per Game</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        summaryContainer.innerHTML = html;
+
+        // Initial placeholder for player widgets
+        widgetsContainer.innerHTML = `
+            <div class="player-widgets-placeholder">
+                <p>👆 Select a player above to see detailed statistics, achievements, and performance trends</p>
+            </div>
+        `;
+    }
+
+    /**
+     * Render player-specific widgets on stats page
+     */
+    async function renderPlayerStatsWidgets(playerName) {
+        const container = document.getElementById('player-stats-widgets');
+        if (!playerName) {
+            container.innerHTML = `
+                <div class="player-widgets-placeholder">
+                    <p>👆 Select a player above to see detailed statistics, achievements, and performance trends</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = '<div class="loading-charts"><p>Loading player stats...</p></div>';
+
+        // Get player data
+        const [stats, scoreDistribution, recentPerformance] = await Promise.all([
+            Stats.calculatePlayerStats(playerName),
+            Stats.getScoreDistribution(playerName),
+            Stats.getRecentPerformance(playerName, 20)
+        ]);
+
+        const prefs = StatsWidgets.getPreferences();
+
+        let html = `<div class="player-widgets-header"><h2>${playerName}'s Dashboard</h2></div>`;
+
+        // Achievements section
+        if (prefs.showAchievements) {
+            const achievementsHtml = StatsWidgets.renderAchievementBadges(stats, false);
+            html += `
+                <div class="widget-section achievements-container" data-player="${playerName}">
+                    <h3>🏆 Achievements</h3>
+                    ${achievementsHtml}
+                </div>
+            `;
+        }
+
+        // Streaks section
+        if (prefs.showStreaks) {
+            const streakData = StatsWidgets.calculateStreaks(recentPerformance);
+            html += `
+                <div class="widget-section">
+                    <h3>🔥 Current Form</h3>
+                    ${StatsWidgets.renderStreaks(streakData)}
+                </div>
+            `;
+        }
+
+        // Progress Rings section
+        if (prefs.showProgressRings) {
+            html += `
+                <div class="widget-section">
+                    <h3>🎯 Goal Progress</h3>
+                    ${StatsWidgets.renderProgressRings(stats, prefs.goals)}
+                </div>
+            `;
+        }
+
+        // Charts row
+        html += `
+            <div class="charts-row">
+                <div class="chart-card">
+                    <h3>Win/Loss Record</h3>
+                    <div class="chart-container chart-container-small">
+                        <canvas id="playerWinLossChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3>Performance Overview</h3>
+                    <div class="chart-container chart-container-small">
+                        <canvas id="playerRadarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="chart-card chart-card-wide">
+                <h3>Performance Trend</h3>
+                <div class="chart-container chart-container-line">
+                    <canvas id="playerPerformanceChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-card chart-card-wide">
+                <h3>Score Distribution</h3>
+                <div class="chart-container chart-container-bar">
+                    <canvas id="playerScoreDistChart"></canvas>
+                </div>
+            </div>
+        `;
+
+        // Activity Heatmap section
+        if (prefs.showHeatmap) {
+            const activityData = await StatsWidgets.getActivityData(playerName, 84);
+            html += `
+                <div class="widget-section">
+                    <h3>📅 Activity (Last 12 Weeks)</h3>
+                    ${StatsWidgets.renderActivityHeatmap(activityData, 12)}
+                </div>
+            `;
+        }
+
+        container.innerHTML = html;
+
+        // Render charts
+        setTimeout(() => {
+            Charts.createWinLossChart('playerWinLossChart', stats.gamesWon, stats.gamesPlayed - stats.gamesWon);
+            Charts.createStatsRadarChart('playerRadarChart', stats);
+            Charts.createPerformanceChart('playerPerformanceChart', recentPerformance);
+            Charts.createScoreDistributionChart('playerScoreDistChart', scoreDistribution);
+        }, 50);
+    }
+
+    /**
+     * Open comparison modal
+     */
+    function openComparisonModal() {
+        const modal = document.getElementById('comparison-modal');
+        if (modal) {
+            modal.classList.remove('hidden');
+        }
+    }
+
+    /**
+     * Close comparison modal
+     */
+    function closeComparisonModal() {
+        const modal = document.getElementById('comparison-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Run player comparison
+     */
+    async function runPlayerComparison() {
+        const player1 = document.getElementById('compare-player-1')?.value;
+        const player2 = document.getElementById('compare-player-2')?.value;
+        const resultContainer = document.getElementById('comparison-result');
+
+        if (!player1 || !player2) {
+            resultContainer.innerHTML = '<p class="error">Please select both players</p>';
+            return;
+        }
+
+        if (player1 === player2) {
+            resultContainer.innerHTML = '<p class="error">Please select different players</p>';
+            return;
+        }
+
+        resultContainer.innerHTML = '<div class="loading-charts"><p>Comparing...</p></div>';
+
+        const [stats1, stats2] = await Promise.all([
+            Stats.calculatePlayerStats(player1),
+            Stats.calculatePlayerStats(player2)
+        ]);
+
+        let html = StatsWidgets.renderPlayerComparison(stats1, stats2, player1, player2);
+        html += `
+            <div class="comparison-chart-container">
+                <canvas id="comparisonRadarChart"></canvas>
+            </div>
+        `;
+
+        resultContainer.innerHTML = html;
+
+        // Render comparison radar chart
+        setTimeout(() => {
+            StatsWidgets.createComparisonRadarChart('comparisonRadarChart', stats1, stats2, player1, player2);
+        }, 50);
     }
 
     // ============================================================================
@@ -1867,7 +2361,13 @@ const UI = (() => {
         updateActiveGameUI,
         renderSpectatorGame,
         updateWinnersBoard,
+        showLiveIndicator,
         getPaginationState: () => paginationState,
+        renderStatsPage,
+        renderPlayerStatsWidgets,
+        openComparisonModal,
+        closeComparisonModal,
+        runPlayerComparison,
         // Competition functions
         renderCompetitionsHub,
         renderTournamentsList,

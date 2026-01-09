@@ -3,8 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Dart Game Score Manager - Track your dart games with detailed statistics">
+    <meta name="description" content="Track your dart games with detailed statistics, leaderboards, and real-time scoring. Perfect for casual players and competitive leagues.">
     <meta name="theme-color" content="#7d5f92">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://mayankpande88.github.io/dart-bee/">
+    <meta property="og:title" content="Dart Bee - Game Score Manager">
+    <meta property="og:description" content="Track dart games with detailed stats, leaderboards, and live scoring">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary">
+    <meta property="twitter:url" content="https://mayankpande88.github.io/dart-bee/">
+    <meta property="twitter:title" content="Dart Bee - Game Score Manager">
+    <meta property="twitter:description" content="Track dart games with detailed stats, leaderboards, and live scoring">
 
     <title>Dart Bee - Game Score Manager</title>
 
@@ -12,25 +24,36 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <!-- Stylesheets -->
-    <link rel="stylesheet" href="styles/main.css?v=20260108.1603">
-    <link rel="stylesheet" href="styles/components.css?v=20260108.1603">
+    <link rel="stylesheet" href="styles/main.css?v=20260108.2241">
+    <link rel="stylesheet" href="styles/components.css?v=20260108.2241">
+    <link rel="stylesheet" href="styles/bee-theme.css?v=20260108.2241">
 
     <!-- Cache Control -->
-    <meta http-equiv=20260108.1505"Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv=20260108.1505"Pragma" content="no-cache">
-    <meta http-equiv=20260108.1505"Expires" content="0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
 
-    <!-- Manifest for PWA -->
+    <!-- PWA & Icons -->
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐝</text></svg>">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='40' fill='%237d5f92'/><text y='140' x='90' font-size='120' text-anchor='middle'>🐝</text></svg>">
 
     <!-- Supabase & Configuration -->
     <!-- Load Supabase Client Library -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Chart.js for data visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <!-- Load Configuration (contains API credentials) -->
-    <script src="scripts/config.js?v=20260108.1603"></script>
+    <script src="scripts/config.js?v=20260108.2241"></script>
 </head>
-<body>
+<body class="honeycomb-bg">
+    <!-- Ambient Bee Decorations -->
+    <div class="ambient-bees">
+        <div class="ambient-bee">🐝</div>
+        <div class="ambient-bee">🐝</div>
+        <div class="ambient-bee">🐝</div>
+    </div>
+
     <div id="app" class="app-container">
         <!-- Navigation Bar -->
         <nav class="navbar">
@@ -58,6 +81,10 @@
                 <button class="nav-link" data-page="competitions" aria-label="Competitions">
                     <span class="icon">🎯</span>
                     <span class="label">Compete</span>
+                </button>
+                <button class="nav-link" data-page="stats" aria-label="Stats">
+                    <span class="icon">📊</span>
+                    <span class="label">Stats</span>
                 </button>
             </div>
         </nav>
@@ -110,7 +137,7 @@
                                         <div class="stat-icon">📊</div>
                                         <div class="stat-content">
                                             <div class="stat-value" id="stat-avg">0</div>
-                                            <div class="stat-label">Best Avg/Dart</div>
+                                            <div class="stat-label">Best Avg/Turn</div>
                                         </div>
                                     </div>
                                 </div>
@@ -332,13 +359,63 @@
                 <div class="leaderboard-tabs">
                     <button class="tab-btn active" data-tab="wins">Most Wins</button>
                     <button class="tab-btn" data-tab="win-rate">Best Win Rate</button>
-                    <button class="tab-btn" data-tab="avg-dart">Avg Per Dart</button>
-                    <button class="tab-btn" data-tab="180s">Most 180s</button>
+                    <button class="tab-btn" data-tab="avg-turn">Avg Per Turn</button>
+                    <button class="tab-btn" data-tab="max-turn">Top Turn</button>
                 </div>
 
                 <!-- Rankings -->
                 <div id="leaderboard-content" class="leaderboard-list">
                     <p class="placeholder">No games yet</p>
+                </div>
+            </div>
+
+            <!-- Global Stats Page -->
+            <div id="stats-page" class="page">
+                <div class="page-header">
+                    <h1>Global Statistics</h1>
+                    <button class="btn btn-secondary btn-small" id="stats-settings-btn" onclick="StatsWidgets.openSettings()">
+                        ⚙️ Customize
+                    </button>
+                </div>
+
+                <!-- Player Selector for detailed stats -->
+                <div class="stats-player-selector">
+                    <label for="stats-player-select">View stats for:</label>
+                    <select id="stats-player-select" class="form-input">
+                        <option value="">-- Select Player --</option>
+                    </select>
+                    <button class="btn btn-secondary btn-small" id="compare-players-btn">Compare Players</button>
+                </div>
+
+                <!-- Global Stats Summary -->
+                <div id="global-stats-summary" class="global-stats-summary">
+                    <!-- Dynamically generated -->
+                </div>
+
+                <!-- Player-specific widgets (when player selected) -->
+                <div id="player-stats-widgets" class="player-stats-widgets">
+                    <!-- Dynamically generated -->
+                </div>
+
+                <!-- Player Comparison Modal -->
+                <div id="comparison-modal" class="comparison-modal hidden">
+                    <div class="comparison-modal-content">
+                        <button class="modal-close" onclick="UI.closeComparisonModal()">×</button>
+                        <h2>Compare Players</h2>
+                        <div class="comparison-selectors">
+                            <select id="compare-player-1" class="form-input">
+                                <option value="">Select Player 1</option>
+                            </select>
+                            <span class="vs-text">VS</span>
+                            <select id="compare-player-2" class="form-input">
+                                <option value="">Select Player 2</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="run-comparison-btn">Compare</button>
+                        <div id="comparison-result" class="comparison-result">
+                            <!-- Dynamically generated -->
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -531,11 +608,15 @@
     <script src="scripts/league.js?v=20260109.1000"></script>
     <!-- 7. Statistics -->
     <script src="scripts/stats.js?v=20260109.1000"></script>
-    <!-- 8. Router for URL-based navigation -->
+    <!-- 8. Charts module -->
+    <script src="scripts/charts.js?v=20260109.1000"></script>
+    <!-- 9. Stats Widgets module -->
+    <script src="scripts/statsWidgets.js?v=20260109.1000"></script>
+    <!-- 10. Router for URL-based navigation -->
     <script src="scripts/router.js?v=20260109.1000"></script>
-    <!-- 9. UI rendering -->
+    <!-- 11. UI rendering -->
     <script src="scripts/ui.js?v=20260109.1000"></script>
-    <!-- 10. Main app logic -->
+    <!-- 12. Main app logic -->
     <script src="scripts/app.js?v=20260109.1000"></script>
 </body>
 </html>

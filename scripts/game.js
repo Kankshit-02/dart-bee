@@ -45,6 +45,7 @@ const Game = (() => {
                     totalDarts: 0,
                     totalScore: 0,
                     avgPerDart: 0,
+                    avgPerTurn: 0,
                     maxTurn: 0,
                     maxDart: 0,
                     checkoutAttempts: 0,
@@ -152,13 +153,20 @@ const Game = (() => {
             currentPlayer.turns.push(turn);
 
             // Update player stats
-            currentPlayer.stats.totalDarts += darts.length;
+            // In per-turn mode: each turn = 3 darts (entered as single total)
+            // In per-dart mode: count actual darts entered
+            const dartCount = game.scoring_mode === 'per-turn' ? 3 : darts.length;
+            currentPlayer.stats.totalDarts += dartCount;
             currentPlayer.stats.totalScore += totalScore;
             currentPlayer.stats.maxTurn = Math.max(currentPlayer.stats.maxTurn, totalScore);
             currentPlayer.stats.maxDart = Math.max(currentPlayer.stats.maxDart, Math.max(...darts));
-            // Calculate average per turn (not per dart)
-            currentPlayer.stats.avgPerDart =
+            // Calculate averages (for UI display)
+            currentPlayer.stats.avgPerTurn =
                 currentPlayer.stats.totalScore / currentPlayer.turns.length;
+            currentPlayer.stats.avgPerDart =
+                currentPlayer.stats.totalDarts > 0
+                    ? currentPlayer.stats.totalScore / currentPlayer.stats.totalDarts
+                    : 0;
         } else {
             currentPlayer.turns.push(turn);
         }
@@ -181,8 +189,8 @@ const Game = (() => {
                 }
             }
 
-            // Count active players after current finish
-            let activePlayersRemaining = activePlayers - 1;
+            // activePlayers already excludes current player (who now has winner=true)
+            let activePlayersRemaining = activePlayers;
 
             // Move to next active player (skip all finished players)
             let searchIndex = (game.current_player_index + 1) % game.players.length;
@@ -257,6 +265,32 @@ const Game = (() => {
 
         game.current_turn++;
 
+        // Check if this player is the last one and all others have finished
+        // If so, they've had their chance in this round - end the game
+        const activePlayers = game.players.filter(p => !p.winner);
+        if (activePlayers.length === 1) {
+            // Get the highest finish_round from finished players
+            const finishedPlayers = game.players.filter(p => p.finish_round != null);
+            if (finishedPlayers.length > 0) {
+                const maxFinishRound = Math.max(...finishedPlayers.map(p => p.finish_round));
+                const currentRound = Math.floor((game.current_turn - 1) / game.players.length);
+
+                // If current player has had their turn in the round where others finished, end game
+                if (currentRound >= maxFinishRound) {
+                    // Last player didn't finish but had their chance
+                    assignRankingsByFinishTurn(game);
+                    endGame(game);
+                    const finalRankings = getRankings(game);
+
+                    return {
+                        success: true,
+                        gameEnded: true,
+                        finalRankings: finalRankings
+                    };
+                }
+            }
+        }
+
         return { success: true, gameEnded: false, nextPlayer: game.players[game.current_player_index].name };
     }
 
@@ -283,7 +317,10 @@ const Game = (() => {
             if (!turn.busted) {
                 currentPlayer.currentScore = turn.remaining;
                 const turnTotal = turn.darts.reduce((a, b) => a + b, 0);
-                currentPlayer.stats.totalDarts += turn.darts.length;
+                // In per-turn mode: each turn = 3 darts
+                // In per-dart mode: count actual darts
+                const dartCount = game.scoring_mode === 'per-turn' ? 3 : turn.darts.length;
+                currentPlayer.stats.totalDarts += dartCount;
                 currentPlayer.stats.totalScore += turnTotal;
                 currentPlayer.stats.maxTurn = Math.max(currentPlayer.stats.maxTurn, turnTotal);
                 currentPlayer.stats.maxDart = Math.max(currentPlayer.stats.maxDart, Math.max(...turn.darts));
@@ -291,8 +328,12 @@ const Game = (() => {
         });
 
         if (currentPlayer.turns.length > 0) {
-            // Calculate average per turn (not per dart)
-            currentPlayer.stats.avgPerDart = currentPlayer.stats.totalScore / currentPlayer.turns.length;
+            // Calculate averages
+            currentPlayer.stats.avgPerTurn = currentPlayer.stats.totalScore / currentPlayer.turns.length;
+            currentPlayer.stats.avgPerDart =
+                currentPlayer.stats.totalDarts > 0
+                    ? currentPlayer.stats.totalScore / currentPlayer.stats.totalDarts
+                    : 0;
         }
 
         return { success: true, player: currentPlayer.name, score: currentPlayer.currentScore };
@@ -412,8 +453,9 @@ const Game = (() => {
                 winner: p.winner,
                 score: p.currentScore,
                 darts: p.stats.totalDarts,
-                avgPerDart: p.turns.length > 0 ? (p.stats.totalScore / p.turns.length).toFixed(2) : '0',
-                turns: p.turns.length
+                turns: p.turns.length,
+                avgPerTurn: p.turns.length > 0 ? (p.stats.totalScore / p.turns.length).toFixed(2) : '0',
+                avgPerDart: p.stats.totalDarts > 0 ? (p.stats.totalScore / p.stats.totalDarts).toFixed(2) : '0'
             })),
             duration: completedTime ? ((completedTime - createdTime) / 1000 / 60).toFixed(1) : null
         };
@@ -464,52 +506,59 @@ const Game = (() => {
         console.log('=== assignRankingsByFinishTurn DEBUG ===');
         console.log('All players:');
         game.players.forEach((p, i) => {
-            console.log(`  [${i}] ${p.name}: score=${p.currentScore}, winner=${p.winner}, finish_round=${p.finish_round}`);
+            console.log(`  [${i}] ${p.name}: score=${p.currentScore}, winner=${p.winner}, finish_round=${p.finish_round}, darts=${p.stats?.totalDarts}`);
         });
 
-        // Get all finished players with their finish rounds
-        // Use != null to catch both null and undefined
+        // Get all finished players with their finish rounds and turns
         const finishedPlayers = game.players
             .filter(p => p.finish_round != null)
             .map(p => ({
                 player: p,
-                finishRound: p.finish_round
+                finishRound: p.finish_round,
+                totalTurns: p.turns.length,
+                totalDarts: p.stats?.totalDarts || 0
             }));
 
-        console.log('Finished players:', finishedPlayers.map(fp => `${fp.player.name}:round${fp.finishRound}`).join(', '));
+        console.log('Finished players:', finishedPlayers.map(fp => `${fp.player.name}:round${fp.finishRound}:${fp.totalTurns}turns:${fp.totalDarts}darts`).join(', '));
 
-        // Sort by finish round (ascending)
+        // Sort by finish round (ascending) - players in same round will be grouped
         finishedPlayers.sort((a, b) => a.finishRound - b.finishRound);
         console.log('After sort:', finishedPlayers.map(fp => `${fp.player.name}:round${fp.finishRound}`).join(', '));
 
-        // Assign ranks
+        // Assign ranks with ties - players finishing in same round get same rank
         let currentRank = 1;
         let lastFinishRound = -1;
         let playersAtCurrentRank = 0;
 
-        for (const { player, finishRound } of finishedPlayers) {
+        finishedPlayers.forEach(({ player, finishRound }) => {
             if (finishRound !== lastFinishRound) {
-                // New finish round, move to next rank(s)
+                // New finish round - advance rank by number of players at previous rank
                 currentRank += playersAtCurrentRank;
                 playersAtCurrentRank = 0;
                 lastFinishRound = finishRound;
             }
             player.finish_rank = currentRank;
-            console.log(`  Assigned ${player.name} rank ${currentRank} (finishRound=${finishRound})`);
             playersAtCurrentRank++;
-        }
+            console.log(`  Assigned ${player.name} rank ${currentRank} (round ${finishRound})`);
+        });
 
-        // Assign rank to any unfinished players (they get the last rank)
-        // Use == null to catch both null and undefined
-        const unfinishedPlayers = game.players.filter(p => p.finish_round == null);
-        console.log('Unfinished players:', unfinishedPlayers.map(p => p.name).join(', ') || 'NONE');
-        if (unfinishedPlayers.length > 0) {
-            const lastRank = game.players.length - unfinishedPlayers.length + 1;
-            console.log(`  Assigning last rank ${lastRank} to unfinished players`);
-            unfinishedPlayers.forEach(p => {
-                p.finish_rank = lastRank;
+        // Assign rank to any unfinished players (they get ranks after finished players)
+        const unfinishedPlayers = game.players
+            .filter(p => p.finish_round == null)
+            .sort((a, b) => {
+                // Sort unfinished by score (lower = better) then by darts (fewer = better)
+                if (a.currentScore !== b.currentScore) {
+                    return a.currentScore - b.currentScore;
+                }
+                return (a.stats?.totalDarts || 0) - (b.stats?.totalDarts || 0);
             });
-        }
+
+        console.log('Unfinished players:', unfinishedPlayers.map(p => p.name).join(', ') || 'NONE');
+        const startRank = finishedPlayers.length + 1;
+        unfinishedPlayers.forEach((p, index) => {
+            p.finish_rank = startRank + index;
+            console.log(`  Assigned ${p.name} rank ${startRank + index} (unfinished)`);
+        });
 
         console.log('Final rankings:');
         game.players.forEach((p, i) => {
@@ -547,8 +596,9 @@ const Game = (() => {
                 rank: p.finish_rank,
                 score: p.currentScore,
                 darts: p.stats.totalDarts,
-                // Calculate average per turn (not per dart)
-                avgPerDart: p.turns.length > 0 ? (p.stats.totalScore / p.turns.length).toFixed(2) : 0
+                turns: p.turns.length,
+                avgPerTurn: p.turns.length > 0 ? (p.stats.totalScore / p.turns.length).toFixed(2) : 0,
+                avgPerDart: p.stats.totalDarts > 0 ? (p.stats.totalScore / p.stats.totalDarts).toFixed(2) : 0
             }))
             .sort((a, b) => (a.rank || 999) - (b.rank || 999));
     }
